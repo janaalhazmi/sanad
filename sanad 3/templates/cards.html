@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% set show_nav = true %}
+{% set active = "cards" %}
+{% block title %}البطاقات - سَند{% endblock %}
+{% block content %}
+<div class="back-row">
+  <a href="/dashboard" class="icon-btn">→</a>
+  <h2>بطاقاتي</h2>
+</div>
+
+<div class="page-body">
+  {% for card in account.cards %}
+  <div class="bank-card">
+    <div class="row1">
+      <span>بطاقة {{ card.type }}</span>
+      <span>سَند</span>
+    </div>
+    <div class="num">•••• •••• •••• {{ card.number }}</div>
+    <div class="row2">
+      <div><span>صاحب البطاقة</span><b>{{ account.name }}</b></div>
+      <div><span>الحالة</span><b>نشطة</b></div>
+    </div>
+  </div>
+  {% else %}
+  <div class="empty-state">لا توجد بطاقات مسجلة</div>
+  {% endfor %}
+
+  <button class="btn secondary" onclick="showToast('سيتم إصدار بطاقة جديدة قريباً')">+ إصدار بطاقة جديدة</button>
+
+  <div class="section-title" style="margin-top:22px;">إعدادات البطاقة</div>
+  <div class="card">
+    <div class="switch-row">
+      <span>تفعيل الدفع الإلكتروني</span>
+      <label class="switch"><input type="checkbox" checked><span class="track"></span></label>
+    </div>
+    <div class="switch-row">
+      <span>السحب من الخارج</span>
+      <label class="switch"><input type="checkbox"><span class="track"></span></label>
+    </div>
+    <div class="switch-row" style="border-bottom:none;">
+      <span>تجميد البطاقة</span>
+      <label class="switch"><input type="checkbox" onchange="showToast(this.checked ? 'تم تجميد البطاقة' : 'تم إلغاء تجميد البطاقة')"><span class="track"></span></label>
+    </div>
+  </div>
+</div>
+{% endblock %}

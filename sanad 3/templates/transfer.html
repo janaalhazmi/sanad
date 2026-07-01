@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% set show_nav = true %}
+{% set active = "transfer" %}
+{% block title %}تحويل - سَند{% endblock %}
+{% block content %}
+<div class="back-row">
+  <a href="/dashboard" class="icon-btn">→</a>
+  <h2>تحويل أموال</h2>
+</div>
+
+<div class="page-body">
+  <div class="card">
+    <div class="field">
+      <label>المستفيد</label>
+      <select id="beneficiarySelect">
+        <option value="">اختر مستفيداً</option>
+        {% for b in beneficiaries %}
+        <option value="{{ b.name }}">{{ b.nickname }} - {{ b.iban }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="field" style="margin-bottom:0;">
+      <label>المبلغ (ريال)</label>
+      <input type="number" id="amountInput" placeholder="0.00" min="1" step="0.01">
+    </div>
+  </div>
+
+  <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px;">
+    الرصيد المتاح: <b id="availableBalance">{{ "%.2f"|format(account.balance) }}</b> ريال
+  </div>
+
+  <a href="/beneficiaries-page" class="login-alt-link" style="display:block; margin-bottom:18px;">+ لا يوجد المستفيد؟ أضفه من صفحة المستفيدين</a>
+
+  <button class="btn" id="continueBtn">متابعة إلى التحقق</button>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.getElementById("continueBtn").addEventListener("click", async () => {
+  const btn = document.getElementById("continueBtn");
+  const beneficiary = document.getElementById("beneficiarySelect").value;
+  const amount = parseFloat(document.getElementById("amountInput").value);
+
+  if (!beneficiary) {
+    showToast("الرجاء اختيار مستفيد", "error");
+    return;
+  }
+  if (!amount || amount <= 0) {
+    showToast("الرجاء إدخال مبلغ صحيح", "error");
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "جارِ التحقق من الطلب...";
+
+  // Every transfer — regardless of entry point — goes through the same
+  // mandatory authentication gate before anything is executed.
+  const { data, ok } = await apiFetch("/api/action/create", {
+    method: "POST",
+    body: { type: "transfer", payload: { beneficiary, amount } },
+  });
+
+  btn.disabled = false;
+  btn.textContent = "متابعة إلى التحقق";
+
+  if (ok && data.success) {
+    window.location.href = "/auth-verify";
+  } else {
+    showToast(data.message || "تعذر إنشاء طلب التحويل", "error");
+  }
+});
+</script>
+{% endblock %}

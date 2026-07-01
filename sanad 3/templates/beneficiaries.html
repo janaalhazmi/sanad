@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% set show_nav = true %}
+{% set active = "beneficiaries" %}
+{% block title %}المستفيدون - سَند{% endblock %}
+{% block content %}
+<div class="back-row">
+  <a href="/dashboard" class="icon-btn">→</a>
+  <h2>المستفيدون</h2>
+</div>
+
+<div class="page-body">
+  <div class="card" style="padding:6px 16px;" id="beneficiaryList">
+    {% for b in beneficiaries %}
+    <div class="list-item" data-name="{{ b.name }}">
+      <div>
+        <div>{{ b.nickname }}</div>
+        <div class="meta" dir="ltr" style="text-align:right;">{{ b.iban }}</div>
+      </div>
+      <button class="icon-btn" style="background:rgba(239,107,91,0.16);color:var(--danger);" onclick="deleteBeneficiary('{{ b.name }}')">🗑</button>
+    </div>
+    {% else %}
+    <div class="empty-state" id="emptyState">لا يوجد مستفيدون بعد</div>
+    {% endfor %}
+  </div>
+
+  <button class="btn" id="toggleAddBtn" style="margin-top:16px;">+ إضافة مستفيد جديد</button>
+
+  <div class="card" id="addForm" style="display:none;margin-top:16px;">
+    <div class="field">
+      <label>اسم المستفيد</label>
+      <input type="text" id="benName" placeholder="مثال: خالد">
+    </div>
+    <div class="field">
+      <label>الاسم المختصر (اختياري)</label>
+      <input type="text" id="benNickname" placeholder="مثال: خالد">
+    </div>
+    <div class="field">
+      <label>رقم الآيبان</label>
+      <input type="text" id="benIban" placeholder="SA00..." dir="ltr" style="text-align:left">
+    </div>
+    <button class="btn" id="addBtn">إضافة المستفيد</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const toggleBtn = document.getElementById("toggleAddBtn");
+const addForm = document.getElementById("addForm");
+toggleBtn.addEventListener("click", () => {
+  const visible = addForm.style.display !== "none";
+  addForm.style.display = visible ? "none" : "block";
+  toggleBtn.textContent = visible ? "+ إضافة مستفيد جديد" : "إخفاء النموذج";
+});
+
+function renderList(list) {
+  const container = document.getElementById("beneficiaryList");
+  container.innerHTML = "";
+  if (!list.length) {
+    container.innerHTML = '<div class="empty-state">لا يوجد مستفيدون بعد</div>';
+    return;
+  }
+  list.forEach((b) => {
+    const row = document.createElement("div");
+    row.className = "list-item";
+    row.dataset.name = b.name;
+    row.innerHTML = `
+      <div>
+        <div>${b.nickname}</div>
+        <div class="meta" dir="ltr" style="text-align:right;">${b.iban}</div>
+      </div>
+      <button class="icon-btn" style="background:rgba(239,107,91,0.16);color:var(--danger);" onclick="deleteBeneficiary('${b.name}')">🗑</button>
+    `;
+    container.appendChild(row);
+  });
+}
+
+document.getElementById("addBtn").addEventListener("click", async (e) => {
+  const btn = e.target;
+  const name = document.getElementById("benName").value.trim();
+  const nickname = document.getElementById("benNickname").value.trim() || name;
+  const iban = document.getElementById("benIban").value.trim();
+
+  if (!name || !iban) {
+    showToast("الرجاء تعبئة الاسم ورقم الآيبان", "error");
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "جارِ التحقق من الطلب...";
+
+  // Beneficiary creation is a sensitive action too — it must go through the
+  // same authentication gate as a transfer, never saved immediately.
+  const { data, ok } = await apiFetch("/api/action/create", {
+    method: "POST",
+    body: { type: "add_beneficiary", payload: { name, nickname, iban } },
+  });
+
+  btn.disabled = false;
+  btn.textContent = "إضافة المستفيد";
+
+  if (ok && data.success) {
+    window.location.href = "/auth-verify";
+  } else {
+    showToast(data.message || "تعذر إضافة المستفيد", "error");
+  }
+});
+
+async function deleteBeneficiary(name) {
+  const { data } = await apiFetch("/api/beneficiaries/delete", {
+    method: "POST",
+    body: { name },
+  });
+  if (data.success) {
+    showToast(data.message, "success");
+    renderList(data.beneficiaries);
+  } else {
+    showToast(data.message || "تعذر حذف المستفيد", "error");
+  }
+}
+</script>
+{% endblock %}

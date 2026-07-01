@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+{% set show_nav = false %}
+{% block title %}المساعد - سَند{% endblock %}
+{% block content %}
+<div style="min-height:40vh; filter:blur(3px); opacity:0.5; pointer-events:none;">
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-badge">س</div>
+      <div>
+        <div style="font-size:13px;opacity:0.85;">أهلاً بعودتك</div>
+        <h1>{{ account.name }}</h1>
+      </div>
+    </div>
+  </div>
+  <div class="page-body" style="padding-top:0;">
+    <div class="balance-card card">
+      <div class="label">الرصيد المتاح</div>
+      <div class="amount">{{ "%.2f"|format(account.balance) }} ريال</div>
+    </div>
+  </div>
+</div>
+
+<div class="assistant-sheet" style="position:static; max-height:none; border-bottom-left-radius:0; border-bottom-right-radius:0; margin-top:-40px;">
+  <div class="sheet-handle"></div>
+  <div class="sheet-top-row">
+    <a href="/dashboard" class="sheet-close">✕</a>
+    <div class="sheet-assistant-id">
+      <div class="titles">
+        <div class="t1">المساعد الصوتي</div>
+        <div class="t2">العربية والإنجليزية</div>
+      </div>
+      <div class="mic-avatar">🎙️</div>
+    </div>
+  </div>
+
+  <div style="display:flex; justify-content:flex-start; margin-bottom:16px;">
+    <button class="lang-pill active" id="langAr" data-lang="ar-SA">AR</button>
+    <button class="lang-pill" id="langEn" data-lang="en-US" style="margin-right:6px;">EN</button>
+  </div>
+
+  <div class="sheet-greeting">كيف يمكنني مساعدتك اليوم؟</div>
+
+  <div class="chat-area" id="chatArea">
+    <div class="bubble bot">مرحباً {{ account.name }}، أنا سَند 🤖<br>لتحويل مبلغ: اختر المستفيد، أدخل المبلغ، ثم أكّد بالبصمة — أو فقط أخبرني بذلك.</div>
+  </div>
+
+  <button class="read-screen-btn" id="readScreenBtn">
+    اقرأ محتوى الشاشة
+    <span class="speaker">🔊</span>
+  </button>
+
+  <div class="suggestion-list" id="suggestionList">
+    <button class="suggestion-item" data-msg="ما هو رصيد حسابي؟"><span class="chev">‹</span> ما هو رصيد حسابي؟</button>
+    <button class="suggestion-item" data-msg="آخر العمليات"><span class="chev">‹</span> آخر العمليات</button>
+    <button class="suggestion-item" data-msg="كيف أحول مبلغ؟"><span class="chev">‹</span> كيف أحول مبلغ؟</button>
+    <button class="suggestion-item" data-msg="بطاقاتي"><span class="chev">‹</span> بطاقاتي</button>
+  </div>
+
+  <div class="voice-status-row" id="voiceStatusRow" style="display:none;">
+    <div class="wave-bars"><span></span><span></span><span></span><span></span><span></span></div>
+    <button class="stop-voice-pill" id="stopVoiceBtn">إيقاف الصوت</button>
+  </div>
+</div>
+
+<div class="chat-input-row">
+  <button class="mic-inline" id="micBtn" title="اضغط للتحدث">🎙️</button>
+  <input type="text" id="textInput" placeholder="اكتب رسالتك هنا...">
+  <button id="sendBtn">➤</button>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const chatArea = document.getElementById("chatArea");
+const micBtn = document.getElementById("micBtn");
+const textInput = document.getElementById("textInput");
+const sendBtn = document.getElementById("sendBtn");
+const langAr = document.getElementById("langAr");
+const langEn = document.getElementById("langEn");
+const voiceStatusRow = document.getElementById("voiceStatusRow");
+const suggestionList = document.getElementById("suggestionList");
+
+let currentLang = "ar-SA";
+let lastBotText = "مرحباً، أنا سَند. كيف يمكنني مساعدتك؟";
+
+langAr.addEventListener("click", () => setLang("ar-SA", langAr, langEn));
+langEn.addEventListener("click", () => setLang("en-US", langEn, langAr));
+
+function setLang(lang, activeBtn, otherBtn) {
+  currentLang = lang;
+  activeBtn.classList.add("active");
+  otherBtn.classList.remove("active");
+}
+
+function addBubble(text, cls) {
+  const b = document.createElement("div");
+  b.className = "bubble " + cls;
+  b.textContent = text;
+  chatArea.appendChild(b);
+  chatArea.scrollTop = chatArea.scrollHeight;
+  if (cls === "bot") lastBotText = text;
+  return b;
+}
+
+function speak(text) {
+  if (!("speechSynthesis" in window)) return;
+  window.speechSynthesis.cancel();
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = currentLang;
+  utter.rate = 1.0;
+  voiceStatusRow.style.display = "flex";
+  utter.onend = () => { voiceStatusRow.style.display = "none"; };
+  utter.onerror = () => { voiceStatusRow.style.display = "none"; };
+  window.speechSynthesis.speak(utter);
+}
+
+document.getElementById("stopVoiceBtn").addEventListener("click", () => {
+  window.speechSynthesis.cancel();
+  voiceStatusRow.style.display = "none";
+});
+
+document.getElementById("readScreenBtn").addEventListener("click", () => speak(lastBotText));
+
+suggestionList.addEventListener("click", (e) => {
+  const item = e.target.closest(".suggestion-item");
+  if (item) sendMessage(item.dataset.msg);
+});
+
+let lastEnteredAmount = null;
+let lastSelectedBeneficiary = null;
+
+async function sendMessage(message) {
+  if (!message || !message.trim()) return;
+  addBubble(message, "user");
+  textInput.value = "";
+
+  const thinking = addBubble("...", "bot");
+
+  const { data } = await apiFetch("/api/assistant", {
+    method: "POST",
+    body: {
+      message,
+      context: {
+        page: "assistant",
+        entered_amount: lastEnteredAmount,
+        selected_beneficiary: lastSelectedBeneficiary,
+        lang: currentLang,
+      },
+    },
+  });
+
+  thinking.remove();
+
+  const responseText = data.response || "عذراً، حدث خطأ في الاتصال بالمساعد.";
+  addBubble(responseText, "bot");
+  speak(responseText);
+
+  const action = data.action || {};
+  if (action.readScreen) {
+    speak(lastBotText);
+  } else if (action.goBack) {
+    addBubble("جارِ الرجوع...", "system");
+    setTimeout(() => window.history.back(), 1000);
+  } else if (action.close) {
+    setTimeout(() => { window.location.href = "/dashboard"; }, 800);
+  } else if (action.navigate) {
+    const target = action.navigate;
+    addBubble("سيتم فتح الصفحة المطلوبة الآن...", "system");
+    setTimeout(() => { window.location.href = target; }, 1600);
+  }
+}
+
+sendBtn.addEventListener("click", () => sendMessage(textInput.value));
+textInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") sendMessage(textInput.value);
+});
+
+// ---------------- Speech recognition ----------------
+const SpeechRecognitionImpl = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition = null;
+let listening = false;
+
+if (SpeechRecognitionImpl) {
+  recognition = new SpeechRecognitionImpl();
+  recognition.continuous = false;
+  recognition.interimResults = false;
+
+  recognition.onresult = (event) => sendMessage(event.results[0][0].transcript);
+  recognition.onerror = () => {
+    listening = false;
+    micBtn.classList.remove("listening");
+    showToast("تعذر التعرف على الصوت، حاول مرة أخرى", "error");
+  };
+  recognition.onend = () => {
+    listening = false;
+    micBtn.classList.remove("listening");
+  };
+
+  micBtn.addEventListener("click", () => {
+    if (listening) { recognition.stop(); return; }
+    recognition.lang = currentLang;
+    try {
+      recognition.start();
+      listening = true;
+      micBtn.classList.add("listening");
+    } catch (e) {
+      showToast("تعذر تشغيل الميكروفون", "error");
+    }
+  });
+} else {
+  micBtn.addEventListener("click", () => {
+    showToast("المتصفح لا يدعم التعرف على الصوت، يمكنك الكتابة بدلاً من ذلك", "error");
+  });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,298 @@
+{% extends "base.html" %}
+{% set show_nav = false %}
+{% block title %}التحقق من الهوية - سَند{% endblock %}
+{% block content %}
+<div class="back-row">
+  <button class="icon-btn" id="cancelBtn">✕</button>
+  <h2>تأكيد العملية</h2>
+</div>
+
+<div class="page-body">
+  <div class="card" id="summaryCard" style="text-align:center;">
+    <div class="skeleton" style="height:20px; width:70%; margin:0 auto;"></div>
+  </div>
+
+  <!-- Choice screen: shown only when biometrics are available on this account & device -->
+  <div id="choiceSection" style="display:none;">
+    <div class="steps"><span class="dot active"></span><span class="dot"></span></div>
+    <p style="text-align:center; color:var(--text-muted); margin-bottom:18px;">اختر طريقة التحقق</p>
+    <div class="login-actions">
+      <button class="btn" id="chooseFingerprintBtn">🔐 التحقق بالبصمة</button>
+      <button class="btn secondary" id="chooseOtpBtn">📩 التحقق برمز الرسائل (OTP)</button>
+    </div>
+  </div>
+
+  <!-- Fingerprint section -->
+  <div id="fpSection" style="display:none;">
+    <div class="card biometric-wrap">
+      <div class="fingerprint" id="fingerprintIcon">👆</div>
+      <p id="fpStatus">اضغط لبدء التحقق بالبصمة</p>
+    </div>
+    <button class="btn" id="scanBtn">مسح البصمة</button>
+    <button class="btn ghost" id="switchToOtpBtn" style="margin-top:12px;">التحقق برمز الرسائل بدلاً من ذلك</button>
+  </div>
+
+  <!-- OTP section -->
+  <div id="otpSection" style="display:none;">
+    <div class="card" style="text-align:center;">
+      <p>تم إرسال رمز تحقق مكوّن من 6 أرقام إلى جوالك</p>
+      <div class="otp-inputs" id="otpInputs">
+        <input maxlength="1" inputmode="numeric" autocomplete="one-time-code">
+        <input maxlength="1" inputmode="numeric">
+        <input maxlength="1" inputmode="numeric">
+        <input maxlength="1" inputmode="numeric">
+        <input maxlength="1" inputmode="numeric">
+        <input maxlength="1" inputmode="numeric">
+      </div>
+      <div id="demoOtpHint" style="font-size:12px;color:var(--text-muted);margin-top:6px;"></div>
+      <div style="display:flex; gap:8px; justify-content:center; margin-top:14px;">
+        <button class="btn ghost small" id="micOtpBtn">🎙️ نطق الرمز</button>
+        <button class="btn ghost small" id="resendOtpBtn">إعادة الإرسال</button>
+      </div>
+    </div>
+    <button class="btn" id="verifyOtpBtn" style="margin-top:16px;">تأكيد الرمز</button>
+    <button class="btn secondary" id="switchToFpBtn" style="margin-top:12px; display:none;">التحقق بالبصمة بدلاً من ذلك</button>
+  </div>
+
+  <!-- Result -->
+  <div id="resultSection" style="display:none;">
+    <div class="card" style="text-align:center;">
+      <div id="resultIcon" style="font-size:46px;margin-bottom:10px;">✅</div>
+      <h3 id="resultTitle">تم التحقق بنجاح</h3>
+      <p id="resultMessage" style="color:var(--text-muted);"></p>
+    </div>
+    <button class="btn" id="doneBtn">متابعة</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const urlParams = new URLSearchParams(window.location.search);
+const methodHint = urlParams.get("method");
+
+const summaryCard = document.getElementById("summaryCard");
+const choiceSection = document.getElementById("choiceSection");
+const fpSection = document.getElementById("fpSection");
+const otpSection = document.getElementById("otpSection");
+const resultSection = document.getElementById("resultSection");
+
+let webauthnAvailableOnAccount = false;
+let platformSupported = false;
+
+function showOnly(el) {
+  [choiceSection, fpSection, otpSection, resultSection].forEach((s) => {
+    s.style.display = s === el ? "block" : "none";
+  });
+}
+
+function showResult(success, title, message, redirect) {
+  showOnly(resultSection);
+  document.getElementById("resultIcon").textContent = success ? "✅" : "❌";
+  document.getElementById("resultTitle").textContent = title;
+  document.getElementById("resultMessage").textContent = message || "";
+  const doneBtn = document.getElementById("doneBtn");
+  doneBtn.onclick = () => { window.location.href = redirect || "/dashboard"; };
+  if (success && redirect) {
+    setTimeout(() => { window.location.href = redirect; }, 1400);
+  }
+}
+
+document.getElementById("cancelBtn").addEventListener("click", async () => {
+  await apiFetch("/api/action/cancel", { method: "POST", body: {} });
+  window.location.href = "/dashboard";
+});
+
+async function loadPendingAction() {
+  const { data, ok } = await apiFetch("/api/action/status");
+  if (!ok || !data.success) {
+    // Never freeze on a dead page — if there's nothing to verify, leave.
+    showToast("لا يوجد طلب معلّق للتحقق منه", "error");
+    setTimeout(() => { window.location.href = "/dashboard"; }, 1200);
+    return null;
+  }
+  summaryCard.innerHTML = `<div>سيتم تنفيذ:</div><div style="font-weight:800; margin-top:6px; color:var(--coral);">${data.description}</div>`;
+  webauthnAvailableOnAccount = !!data.webauthn_available;
+  return data;
+}
+
+async function decideInitialScreen() {
+  const pending = await loadPendingAction();
+  if (!pending) return;
+
+  platformSupported = await checkPlatformAuthenticatorAvailable();
+  const biometricsUsable = webauthnAvailableOnAccount && platformSupported;
+
+  if (!biometricsUsable) {
+    // Requirement: if the browser/device doesn't support biometrics,
+    // automatically show the SMS OTP screen — never leave the user stuck.
+    document.getElementById("switchToFpBtn").style.display = "none";
+    startOtp();
+    return;
+  }
+
+  if (methodHint === "webauthn") {
+    startFingerprint();
+  } else if (methodHint === "otp") {
+    startOtp();
+  } else {
+    showOnly(choiceSection);
+  }
+}
+
+document.getElementById("chooseFingerprintBtn")?.addEventListener("click", startFingerprint);
+document.getElementById("chooseOtpBtn")?.addEventListener("click", startOtp);
+document.getElementById("switchToOtpBtn").addEventListener("click", startOtp);
+document.getElementById("switchToFpBtn").addEventListener("click", startFingerprint);
+
+function startFingerprint() {
+  showOnly(fpSection);
+  document.getElementById("fpStatus").textContent = "اضغط لبدء التحقق بالبصمة";
+  document.getElementById("fingerprintIcon").classList.remove("scanning");
+  if (webauthnAvailableOnAccount && platformSupported) {
+    document.getElementById("switchToOtpBtn").style.display = "block";
+  }
+}
+
+document.getElementById("scanBtn").addEventListener("click", async () => {
+  const icon = document.getElementById("fingerprintIcon");
+  const status = document.getElementById("fpStatus");
+  const btn = document.getElementById("scanBtn");
+
+  icon.classList.add("scanning");
+  status.textContent = "جاري التحقق من البصمة...";
+  btn.disabled = true;
+
+  const result = await verifyActionWithBiometric();
+
+  icon.classList.remove("scanning");
+  btn.disabled = false;
+
+  if (result.success) {
+    status.textContent = "تم التحقق بنجاح ✅";
+    showResult(true, "تمت العملية بنجاح", result.message, result.redirect);
+  } else {
+    // Never silently fail: always show a clear error, and offer SMS as a
+    // fallback right away instead of leaving the user stuck.
+    status.textContent = "فشل التحقق بالبصمة";
+    showToast(result.message || "فشل التحقق بالبصمة", "error");
+    document.getElementById("switchToOtpBtn").style.display = "block";
+  }
+});
+
+// ---------------- OTP ----------------
+const otpInputs = Array.from(document.querySelectorAll("#otpInputs input"));
+
+function startOtp() {
+  showOnly(otpSection);
+  if (webauthnAvailableOnAccount && platformSupported) {
+    document.getElementById("switchToFpBtn").style.display = "block";
+  }
+  sendOtp();
+}
+
+async function sendOtp() {
+  const { data, ok } = await apiFetch("/api/action/otp/send", { method: "POST", body: {} });
+  if (!ok || !data.success) {
+    showToast(data.message || "تعذر إرسال رمز التحقق", "error");
+    return;
+  }
+  document.getElementById("demoOtpHint").textContent = data.demo_code ? `(تجريبي) رمز التحقق: ${data.demo_code}` : "";
+  otpInputs.forEach((i) => (i.value = ""));
+  otpInputs[0].focus();
+}
+
+function fillOtpFrom(digitString) {
+  const digits = (digitString || "").replace(/\D/g, "").slice(0, 6).split("");
+  otpInputs.forEach((box, i) => { box.value = digits[i] || ""; });
+  if (digits.length === 6) verifyOtp();
+  else otpInputs[digits.length]?.focus();
+}
+
+otpInputs.forEach((input, idx) => {
+  input.addEventListener("input", () => {
+    input.value = input.value.replace(/[^0-9\u0660-\u0669]/g, "");
+    if (input.value && idx < otpInputs.length - 1) otpInputs[idx + 1].focus();
+    if (otpInputs.every((b) => b.value)) verifyOtp();
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Backspace" && !input.value && idx > 0) otpInputs[idx - 1].focus();
+  });
+  input.addEventListener("paste", (e) => {
+    e.preventDefault();
+    const pasted = (e.clipboardData || window.clipboardData).getData("text");
+    fillOtpFrom(pasted);
+  });
+});
+
+document.getElementById("resendOtpBtn").addEventListener("click", () => {
+  sendOtp();
+  showToast("تم إعادة إرسال الرمز", "success");
+});
+
+document.getElementById("verifyOtpBtn").addEventListener("click", verifyOtp);
+
+let verifying = false;
+async function verifyOtp() {
+  if (verifying) return;
+  const code = otpInputs.map((i) => i.value).join("");
+  if (code.length !== 6) {
+    showToast("الرجاء إدخال الرمز كاملاً", "error");
+    return;
+  }
+  await submitOtpCode(code);
+}
+
+async function verifyOtpWithRawText(rawText) {
+  if (verifying) return;
+  showToast("جارِ التحقق من الرمز المنطوق...", "");
+  await submitOtpCode(rawText);
+}
+
+async function submitOtpCode(code) {
+  verifying = true;
+  const { data, ok } = await apiFetch("/api/action/otp/verify", { method: "POST", body: { code } });
+  verifying = false;
+
+  if (ok && data.success) {
+    showResult(true, "تمت العملية بنجاح", data.message, data.redirect);
+  } else {
+    showToast(data.message || "رمز التحقق غير صحيح", "error");
+    otpInputs.forEach((i) => (i.value = ""));
+    otpInputs[0].focus();
+  }
+}
+
+// Voice OTP entry: "واحد اثنين ثلاثة أربعة خمسة ستة" -> fills + verifies.
+const SpeechRecognitionImpl = window.SpeechRecognition || window.webkitSpeechRecognition;
+const micOtpBtn = document.getElementById("micOtpBtn");
+if (SpeechRecognitionImpl) {
+  const recognition = new SpeechRecognitionImpl();
+  recognition.lang = "ar-SA";
+  recognition.continuous = false;
+  recognition.interimResults = false;
+
+  recognition.onresult = (event) => {
+    const transcript = event.results[0][0].transcript;
+    const digitsOnly = transcript.replace(/[^0-9\u0660-\u0669]/g, "");
+    if (digitsOnly.length === 6) {
+      fillOtpFrom(digitsOnly);
+    } else {
+      // Spoken as words ("واحد اثنين ثلاثة..." / "one two three...") — let
+      // the server convert them, since it has the full word-to-digit map.
+      verifyOtpWithRawText(transcript);
+    }
+  };
+  recognition.onerror = () => showToast("تعذر التعرف على الصوت", "error");
+
+  micOtpBtn.addEventListener("click", () => {
+    try { recognition.start(); showToast("تكلم الآن...", ""); }
+    catch (e) { showToast("تعذر تشغيل الميكروفون", "error"); }
+  });
+} else {
+  micOtpBtn.addEventListener("click", () => showToast("المتصفح لا يدعم التعرف على الصوت", "error"));
+}
+
+decideInitialScreen();
+</script>
+{% endblock %}

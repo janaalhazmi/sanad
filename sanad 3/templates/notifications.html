@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% set show_nav = true %}
+{% set active = "notifications" %}
+{% block title %}الإشعارات - سَند{% endblock %}
+{% block content %}
+<div class="back-row">
+  <a href="/dashboard" class="icon-btn">→</a>
+  <h2>الإشعارات</h2>
+</div>
+
+<div class="page-body">
+  <div class="card" style="padding:6px 16px;">
+    {% for n in account.notifications %}
+    <div class="list-item">
+      <div>
+        <div>{{ n }}</div>
+        <div class="meta">الآن</div>
+      </div>
+      <span style="font-size:16px;">🔔</span>
+    </div>
+    {% else %}
+    <div class="empty-state">لا توجد إشعارات جديدة</div>
+    {% endfor %}
+  </div>
+
+  <button class="btn secondary" id="readAllBtn">تحديد الكل كمقروء</button>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.getElementById("readAllBtn").addEventListener("click", async () => {
+  const { data } = await apiFetch("/api/notifications/read", { method: "POST" });
+  if (data.success) {
+    showToast("تم تحديد كل الإشعارات كمقروءة", "success");
+  } else {
+    showToast("تعذر تنفيذ العملية", "error");
+  }
+});
+</script>
+{% endblock %}

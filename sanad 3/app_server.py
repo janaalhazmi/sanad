@@ -25,7 +25,16 @@ from transfer import TransferManager
 from beneficiary import BeneficiaryManager
 import assistant_nlu as nlu
 
-app = Flask(__name__)
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent
+
+app = Flask(
+    __name__,
+    template_folder=str(BASE_DIR / "templates"),
+    static_folder=str(BASE_DIR / "static"),
+)
+
 app.secret_key = "sanad-demo-secret-key-change-me"
 
 # Static assets rarely change during a demo session; let the browser cache
