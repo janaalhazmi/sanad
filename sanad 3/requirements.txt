@@ -6,7 +6,7 @@ scikit-learn
 joblib
 numpy
 python-dotenv
-
+gunicorn
 # ---- Optional: CORS (only needed if the frontend is served from a
 # different origin than the API) ----
 flask-cors
