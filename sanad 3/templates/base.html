@@ -1,47 +1,59 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="ar" dir="rtl" data-theme="{{ theme or 'dark' }}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>{% block title %}سَند{% endblock %}</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ asset_v }}">
+{% from "_icons.html" import icon %}
 {% block extra_head %}{% endblock %}
 </head>
-<body class="{{ '' if show_nav else 'no-bottom-nav' }}">
-<script>window.SANAD_PAGE = "{{ active or 'unknown' }}";</script>
+<body class="{{ '' if show_nav else 'no-bottom-nav' }}{{ ' senior-mode' if accessibility.senior_mode else '' }}{{ ' high-contrast' if accessibility.high_contrast else '' }}">
+<script>
+  window.SANAD_PAGE = "{{ active or 'unknown' }}";
+  window.SANAD_ACCESSIBILITY = {{ accessibility | tojson }};
+  window.SANAD_THEME = "{{ theme or 'dark' }}";
+  window.SANAD_WAKE_WORD_ENABLED = {{ 'true' if wake_word_enabled else 'false' }};
+</script>
 <div class="app-shell">
   {% block content %}{% endblock %}
 
   {% if show_nav %}
   <nav class="bottom-nav">
     <a href="/dashboard" class="{{ 'active' if active=='dashboard' else '' }}">
-      <span class="nav-icon">🏠</span>الرئيسية
+      <span class="nav-icon">{{ icon('home', 19) }}</span>الرئيسية
     </a>
     <a href="/transactions-page" class="{{ 'active' if active=='transactions' else '' }}">
-      <span class="nav-icon">🧾</span>العمليات
+      <span class="nav-icon">{{ icon('receipt', 19) }}</span>العمليات
     </a>
-    <a href="/assistant" class="fab" title="المساعد الصوتي">🎙️</a>
+    <a href="/assistant" class="fab" title="المساعد الصوتي">{{ icon('mic', 24) }}</a>
     <a href="/transfer" class="{{ 'active' if active=='transfer' else '' }}">
-      <span class="nav-icon">💸</span>تحويل
+      <span class="nav-icon">{{ icon('transfer', 19) }}</span>تحويل
     </a>
     <a href="/settings" class="{{ 'active' if active=='settings' else '' }}">
-      <span class="nav-icon">⚙️</span>الإعدادات
+      <span class="nav-icon">{{ icon('gear', 19) }}</span>الإعدادات
     </a>
   </nav>
   {% endif %}
 
   {% if not hide_global_assistant %}
   <div class="global-assistant-cluster">
-    <button class="global-assistant-btn" id="globalAssistantRead" title="اقرأ محتوى الشاشة">🔊</button>
-    <button class="global-assistant-btn" id="globalAssistantMic" title="تحدث للمساعد">🎙️</button>
+    <button class="global-assistant-btn" id="globalAssistantRead" title="اقرأ محتوى الشاشة">{{ icon('speaker', 19) }}</button>
+    <button class="global-assistant-btn" id="globalAssistantMic" title="تحدث للمساعد">{{ icon('mic', 19) }}</button>
   </div>
   {% endif %}
 </div>
-<script src="{{ url_for('static', filename='js/main.js') }}"></script>
-<script src="{{ url_for('static', filename='js/webauthn.js') }}"></script>
+<script src="{{ url_for('static', filename='js/main.js') }}?v={{ asset_v }}"></script>
+<script src="{{ url_for('static', filename='js/webauthn.js') }}?v={{ asset_v }}"></script>
+<script src="{{ url_for('static', filename='js/waveform.js') }}?v={{ asset_v }}"></script>
+<script src="{{ url_for('static', filename='js/stt_fallback.js') }}?v={{ asset_v }}"></script>
+<script src="{{ url_for('static', filename='js/voice_player.js') }}?v={{ asset_v }}"></script>
+<script src="{{ url_for('static', filename='js/voice_auth_recorder.js') }}?v={{ asset_v }}"></script>
 {% if not hide_global_assistant %}
-<script src="{{ url_for('static', filename='js/global_assistant.js') }}"></script>
+<script src="{{ url_for('static', filename='js/global_assistant.js') }}?v={{ asset_v }}"></script>
+<script src="{{ url_for('static', filename='js/wake_word.js') }}?v={{ asset_v }}"></script>
 {% endif %}
+<script src="{{ url_for('static', filename='js/accessibility.js') }}?v={{ asset_v }}"></script>
 {% block extra_scripts %}{% endblock %}
 </body>
 </html>

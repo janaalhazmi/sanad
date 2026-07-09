@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% set show_nav = true %}
 {% set active = "dashboard" %}
 {% block title %}الرئيسية - سَند{% endblock %}
@@ -11,7 +12,7 @@
       <h1>{{ account.name }}</h1>
     </div>
   </div>
-  <button class="icon-btn" onclick="logout()" title="تسجيل الخروج">⎋</button>
+  <button class="icon-btn" onclick="logout()" title="تسجيل الخروج">{{ icon('logout', 18) }}</button>
 </div>
 
 <div class="page-body" style="padding-top:0;">
@@ -22,14 +23,14 @@
   </div>
 
   <div class="quick-actions">
-    <a href="/transfer"><span class="qa-icon">💸</span>تحويل</a>
-    <a href="/cards"><span class="qa-icon">💳</span>البطاقات</a>
-    <a href="/beneficiaries-page"><span class="qa-icon">👥</span>المستفيدون</a>
-    <a href="/notifications-page"><span class="qa-icon">🔔</span>الإشعارات</a>
-    <a href="/transactions-page"><span class="qa-icon">🧾</span>العمليات</a>
-    <a href="/assistant"><span class="qa-icon">🎙️</span>المساعد</a>
-    <a href="/settings"><span class="qa-icon">⚙️</span>الإعدادات</a>
-    <a href="#" onclick="showToast('تم العثور على أقرب فرع وصراف آلي')"><span class="qa-icon">📍</span>أقرب فرع</a>
+    <a href="/transfer"><span class="qa-icon">{{ icon('transfer') }}</span>تحويل</a>
+    <a href="/cards"><span class="qa-icon">{{ icon('card') }}</span>البطاقات</a>
+    <a href="/beneficiaries-page"><span class="qa-icon">{{ icon('users') }}</span>المستفيدون</a>
+    <a href="/notifications-page"><span class="qa-icon">{{ icon('bell') }}</span>الإشعارات</a>
+    <a href="/transactions-page"><span class="qa-icon">{{ icon('receipt') }}</span>العمليات</a>
+    <a href="/assistant"><span class="qa-icon">{{ icon('mic') }}</span>المساعد</a>
+    <a href="/settings"><span class="qa-icon">{{ icon('gear') }}</span>الإعدادات</a>
+    <a href="#" onclick="showToast('تم العثور على أقرب فرع وصراف آلي')"><span class="qa-icon">{{ icon('pin') }}</span>أقرب فرع</a>
   </div>
 
   <div class="section-title">
@@ -38,7 +39,13 @@
   </div>
   <div class="card" style="padding:6px 16px;">
     {% for t in account.transactions[:3] %}
-    <div class="list-item"><span>{{ t }}</span></div>
+    {% set is_outgoing = ('تحويل' in t or '-' in t) %}
+    <div class="list-item">
+      <div>
+        <span class="list-icon">{{ icon('arrow-up-right') if is_outgoing else icon('arrow-down-left') }}</span>
+        <span class="{{ 'amount-negative' if is_outgoing else 'amount-positive' }}">{{ t }}</span>
+      </div>
+    </div>
     {% else %}
     <div class="empty-state">لا توجد عمليات بعد</div>
     {% endfor %}

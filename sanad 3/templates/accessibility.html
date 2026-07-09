@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% set show_nav = true %}
+{% set active = "accessibility" %}
+{% block title %}إمكانية الوصول - سَند{% endblock %}
+{% block content %}
+<div class="back-row">
+  <a href="/settings" class="icon-btn">{{ icon('chevron-right', 18) }}</a>
+  <h2>إمكانية الوصول</h2>
+</div>
+
+<div class="page-body">
+  <div class="section-title">وضع كبار السن</div>
+  <div class="card">
+    <div class="switch-row">
+      <div>
+        <span>تفعيل وضع كبار السن</span>
+        <div class="desc">خطوط وأزرار أكبر، تباين أعلى، وقراءة تلقائية للشاشة</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="seniorModeToggle"><span class="track"></span></label>
+    </div>
+    <div class="switch-row" style="border-bottom:none;">
+      <div>
+        <span>التباين العالي</span>
+        <div class="desc">ألوان أوضح وأكثر تبايناً لسهولة القراءة</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="highContrastToggle"><span class="track"></span></label>
+    </div>
+  </div>
+
+  <div class="section-title">القراءة الصوتية التلقائية</div>
+  <div class="card">
+    <div class="switch-row">
+      <div>
+        <span>قراءة الشاشة تلقائياً</span>
+        <div class="desc">يقرأ محتوى كل صفحة صوتياً عند فتحها</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="autoReadScreenToggle"><span class="track"></span></label>
+    </div>
+    <div class="switch-row">
+      <span>قراءة الإشعارات</span>
+      <label class="switch"><input type="checkbox" id="readNotificationsToggle"><span class="track"></span></label>
+    </div>
+    <div class="switch-row">
+      <span>قراءة الأخطاء</span>
+      <label class="switch"><input type="checkbox" id="readErrorsToggle"><span class="track"></span></label>
+    </div>
+    <div class="switch-row">
+      <span>قراءة رسائل النجاح</span>
+      <label class="switch"><input type="checkbox" id="readSuccessToggle"><span class="track"></span></label>
+    </div>
+    <div class="switch-row">
+      <span>قراءة الرصيد</span>
+      <label class="switch"><input type="checkbox" id="readBalancesToggle"><span class="track"></span></label>
+    </div>
+    <div class="switch-row">
+      <span>قراءة العمليات</span>
+      <label class="switch"><input type="checkbox" id="readTransactionsToggle"><span class="track"></span></label>
+    </div>
+    <div class="switch-row" style="border-bottom:none;">
+      <span>قراءة تعليمات رمز التحقق (OTP)</span>
+      <label class="switch"><input type="checkbox" id="readOtpToggle"><span class="track"></span></label>
+    </div>
+  </div>
+
+  <div class="section-title">إعدادات الصوت</div>
+  <div class="card">
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px;">
+      سرعة الصوت والصوت المفضّل تُدار من صفحة إعدادات الصوت نفسها حتى لا
+      تتكرر الإعدادات في مكانين.
+    </p>
+    <a href="/settings" class="btn secondary">{{ icon('speaker', 16) }} فتح إعدادات الصوت</a>
+  </div>
+
+  <button class="btn" id="testReadScreenBtn" style="margin-top:8px;">{{ icon('speaker', 16) }} جرّب قراءة هذه الصفحة الآن</button>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const seniorModeToggle = document.getElementById("seniorModeToggle");
+const highContrastToggle = document.getElementById("highContrastToggle");
+const autoReadScreenToggle = document.getElementById("autoReadScreenToggle");
+const readNotificationsToggle = document.getElementById("readNotificationsToggle");
+const readErrorsToggle = document.getElementById("readErrorsToggle");
+const readSuccessToggle = document.getElementById("readSuccessToggle");
+const readBalancesToggle = document.getElementById("readBalancesToggle");
+const readTransactionsToggle = document.getElementById("readTransactionsToggle");
+const readOtpToggle = document.getElementById("readOtpToggle");
+
+const TOGGLE_MAP = {
+  senior_mode: seniorModeToggle,
+  high_contrast: highContrastToggle,
+  auto_read_screen: autoReadScreenToggle,
+  read_notifications: readNotificationsToggle,
+  read_errors: readErrorsToggle,
+  read_success: readSuccessToggle,
+  read_balances: readBalancesToggle,
+  read_transactions: readTransactionsToggle,
+  read_otp_instructions: readOtpToggle,
+};
+
+function renderSettings(settings) {
+  for (const [key, el] of Object.entries(TOGGLE_MAP)) {
+    if (settings[key] != null) el.checked = !!settings[key];
+  }
+}
+
+(async function init() {
+  if (window.SanadAccessibility) {
+    const settings = await window.SanadAccessibility.refreshFromServer();
+    renderSettings(settings);
+  } else {
+    const { data } = await apiFetch("/api/accessibility/settings");
+    if (data && data.success) renderSettings(data.settings);
+  }
+})();
+
+for (const [key, el] of Object.entries(TOGGLE_MAP)) {
+  el.addEventListener("change", async () => {
+    el.disabled = true;
+    const update = { [key]: el.checked };
+    let data;
+    if (window.SanadAccessibility) {
+      data = await window.SanadAccessibility.saveSettings(update);
+    } else {
+      const res = await apiFetch("/api/accessibility/settings", { method: "POST", body: update });
+      data = res.data;
+    }
+    el.disabled = false;
+    if (data && data.success) {
+      showToast(data.message, "success");
+      renderSettings(data.settings);
+    } else {
+      el.checked = !el.checked;
+      showToast((data && data.message) || "تعذر حفظ الإعداد", "error");
+    }
+  });
+}
+
+document.getElementById("testReadScreenBtn").addEventListener("click", () => {
+  if (window.SanadGlobalAssistant) {
+    window.SanadGlobalAssistant.readScreen();
+  } else {
+    showToast("ميزة قراءة الشاشة غير متاحة", "error");
+  }
+});
+</script>
+{% endblock %}

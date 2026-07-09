@@ -10,9 +10,11 @@ navigation-command detection.
 
 import re
 import os
-from difflib import get_close_matches
+from difflib import get_close_matches, SequenceMatcher
 
 import joblib
+
+import assistant_semantic
 
 MODEL_FILE = os.path.join(os.path.dirname(__file__), "sand_model.pkl")
 
@@ -85,8 +87,12 @@ def strip_fillers(text: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Intent classification
-# ---------------------------------------------------------------------------
+# NOTE: this fixed list is kept only as a harmless legacy reference — intent
+# classification confidence no longer uses get_close_matches against it (see
+# detect_intent_with_confidence(), which now uses assistant_semantic.py's
+# broader paraphrase-bank + cosine-similarity matching instead). detect_intent()
+# below (the plain, non-confidence variant) still uses it for backward
+# compatibility with any existing caller.
 AR_COMMANDS = [
     "كم رصيدي", "كم الرصيد", "وش رصيدي", "كم معي", "اعرض الرصيد", "أبي أشوف رصيدي",
     "افتح البطاقات", "بطاقاتي", "اعرض البطاقات", "ورني بطاقاتي",
@@ -137,6 +143,145 @@ def detect_intent(text: str) -> str:
             if kw in lowered:
                 return intent
     return "unknown"
+
+
+# Strong signal words for "this is an open-ended question or opinion/
+# recommendation request", never present in any trained command (verified
+# empirically against commands.csv — zero occurrences), so this check can
+# only ever LOWER a confidence that would otherwise be wrong; it can never
+# suppress a legitimate simple command like "لو سمحت كم رصيدي من فضلك".
+#
+# Why this exists: once text gets fuzzy-corrected to a short known command
+# string (e.g. "ما رسوم السحب النقدي من الخارج" -> "اعرض البطاقات"), the
+# classifier is then run on the CORRECTED string and is tautologically
+# confident about it — the real signal that mattered (how loosely the
+# original text actually resembled that command) already got baked in as
+# only a middling `similarity` score, but a message like this can still
+# clear the 0.35 confidence threshold. This guard catches exactly that gap.
+_OPEN_QUESTION_MARKERS = (
+    "رسوم", "قرض", "قروض", "تمويل", "تمويلي", "أفضل", "افضل", "الفرق", "رأيك", "رايك",
+    "توصية", "سفر", "نصيحة", "ليش", "ايش رايك", "وش رايك",
+    "أطلع", "اطلع", "احصل", "استخرج", "قسط", "اقساط", "مرابحة", "تقسيط",
+    "فتح حساب", "بطاقة ائتمان", "كيف اقدر", "كيف يمكن", "شروط", "أهلية",
+)
+
+# Broader structural signal, on top of the topic-keyword list above: no
+# local navigation/single-turn command in this app is EVER phrased as a
+# "كيف/ليش/لماذا/متى ...؟" question (verified against AR_COMMANDS,
+# assistant_semantic.INTENT_EXAMPLES, and NAV_COMMANDS below — none start
+# this way), so any message that DOES start with one of these question
+# words is always treated as open-ended and routed to the AI layer,
+# regardless of which topic words it happens to contain. This is what
+# catches phrasings the topic-keyword list above doesn't happen to name,
+# e.g. "كيف أرفع الحد الائتماني؟" (no "قرض"/"تمويل"/etc, but still clearly
+# a how-to question, not a command). Deliberately excludes "ما/هل" prefixes
+# — those DO legitimately open real local commands (e.g. "ما هو رصيدي؟"),
+# so blanket-catching them would break the fast local balance/cards/etc.
+# replies instead of only fixing the AI-routing gap.
+_GENERIC_QUESTION_PREFIX_RE = re.compile(r"^\s*(?:كيف|ليش|ليه|لماذا|متى|وش سبب|ليش سبب)\b")
+
+
+# ---------------------------------------------------------------------------
+# Emergency / safety phrases — ALWAYS the highest-priority check in the
+# whole assistant pipeline (see app_server.py's _resolve_locally(), where
+# this is checked before anything else: before login gating, before any
+# active flow, before local-intent detection, before the AI fallback).
+# A user reporting fraud/theft/threat/account compromise must get an
+# immediate, unambiguous safety response and be moved to safety — never a
+# clarifying question, never normal NLU/AI routing, and never left mid-way
+# through an unrelated flow (which gets dropped immediately, since the
+# account may be compromised).
+# ---------------------------------------------------------------------------
+_EMERGENCY_TRIGGER_RE = re.compile(
+    r"مهدد|بخطر|في خطر|خطر يهددني|"
+    r"احتيال|للاحتيال|النصب|نصبوا علي|"
+    r"سرق|سرقو|سرقوا|انسرق|سرقت|"
+    r"اختراق|مخترق|اخترقوا|اخترق حسابي|"
+    r"threat|danger|fraud|scam|stolen|robbed|hacked|compromised",
+    re.IGNORECASE,
+)
+
+
+def is_emergency(text: str) -> bool:
+    """True for any phrase describing an active security emergency
+    (threat, fraud, theft, a hacked/compromised account) — in Arabic or
+    English, formal or dialectal."""
+    raw = (text or "").strip()
+    if not raw:
+        return False
+    return bool(_EMERGENCY_TRIGGER_RE.search(normalize_arabic(raw))) or bool(
+        _EMERGENCY_TRIGGER_RE.search(raw.lower())
+    )
+
+
+def detect_intent_with_confidence(text: str):
+    """Like detect_intent(), but also returns a 0.0-1.0 confidence score.
+
+    Uses semantic (character-embedding cosine similarity) matching against
+    a broad paraphrase bank per intent — see assistant_semantic.py — instead
+    of whole-string fuzzy matching against a handful of fixed command
+    strings. This is why a paraphrase like "أنا مسافر" (I'm traveling) or
+    "أحتاج قرض" (I need a loan) now correctly scores LOW similarity against
+    every known navigation intent (they simply aren't paraphrases of any of
+    them) and falls through to the AI layer, instead of being force-matched
+    to whichever known command happens to share the most characters.
+
+    Why this exists at all: the trained classifier only knows ~12 intents
+    and, being a forced-choice classifier, ALWAYS predicts one of them — it
+    has no built-in way to say "none of these fit". This function adds that
+    missing signal on top, without changing detect_intent()'s existing
+    behavior for any caller that already depends on it.
+    """
+    raw = (text or "").strip()
+    if not raw:
+        return "unknown", 0.0
+
+    cleaned = light_normalize(raw)
+
+    if any(marker in cleaned for marker in _OPEN_QUESTION_MARKERS) or _GENERIC_QUESTION_PREFIX_RE.match(cleaned):
+        try:
+            intent = _get_model().predict([cleaned])[0]
+        except Exception:
+            intent = "unknown"
+        return intent, 0.1
+
+    if is_arabic(cleaned):
+        semantic_intent, semantic_score, _matched = assistant_semantic.best_semantic_intent(cleaned)
+
+        if semantic_score < 0.30:
+            # Nothing in our paraphrase bank even loosely resembles this
+            # text — low confidence regardless of what the model forces
+            # itself to predict below.
+            try:
+                intent = _get_model().predict([cleaned])[0]
+            except Exception:
+                intent = "unknown"
+            return intent, min(semantic_score, 0.2)
+
+        try:
+            model = _get_model()
+            proba = model.predict_proba([cleaned])[0]
+            model_confidence = float(max(proba))
+            model_intent = model.classes_[int(proba.argmax())]
+        except Exception:
+            model_confidence = 0.5
+            model_intent = semantic_intent
+
+        # Conservative ensemble: trust the semantic match's intent label
+        # (broader paraphrase coverage) when the trained classifier agrees
+        # it's at least plausible, or when the semantic similarity is very
+        # strong on its own; otherwise defer to the classifier's own guess
+        # but at a discounted confidence, since the two signals disagree.
+        if semantic_intent == model_intent or semantic_score >= 0.55:
+            return semantic_intent, min(semantic_score, model_confidence)
+        return model_intent, model_confidence * 0.6
+
+    lowered = cleaned.lower()
+    for intent, keywords in EN_KEYWORDS.items():
+        for kw in keywords:
+            if kw in lowered:
+                return intent, 0.9
+    return "unknown", 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -476,6 +621,14 @@ NAV_COMMANDS = [
     (re.compile(r"الإشعارات|open notifications|notifications page", re.IGNORECASE), "notifications-page"),
     (re.compile(r"كشف الحساب|آخر العمليات|open transactions|transactions page", re.IGNORECASE), "transactions-page"),
     (re.compile(r"الإعدادات|open settings|settings page", re.IGNORECASE), "settings"),
+    (
+        re.compile(
+            r"المساعد الصوتي|المساعد\b|افتح المساعد|اذهب.*المساعد|روح.*المساعد|"
+            r"open assistant|go to assistant|voice assistant",
+            re.IGNORECASE,
+        ),
+        "assistant",
+    ),
 ]
 
 

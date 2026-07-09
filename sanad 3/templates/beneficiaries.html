@@ -1,29 +1,39 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% set show_nav = true %}
 {% set active = "beneficiaries" %}
 {% block title %}المستفيدون - سَند{% endblock %}
 {% block content %}
 <div class="back-row">
-  <a href="/dashboard" class="icon-btn">→</a>
+  <a href="/dashboard" class="icon-btn">{{ icon('chevron-right', 18) }}</a>
   <h2>المستفيدون</h2>
 </div>
 
 <div class="page-body">
+  <div class="search-bar">
+    <span class="search-icon">{{ icon('search', 17) }}</span>
+    <input type="text" id="benSearch" placeholder="ابحث عن مستفيد...">
+  </div>
+
   <div class="card" style="padding:6px 16px;" id="beneficiaryList">
     {% for b in beneficiaries %}
-    <div class="list-item" data-name="{{ b.name }}">
+    <div class="list-item" data-name="{{ b.name }}" data-search="{{ (b.nickname ~ ' ' ~ b.iban)|lower }}">
       <div>
-        <div>{{ b.nickname }}</div>
-        <div class="meta" dir="ltr" style="text-align:right;">{{ b.iban }}</div>
+        <span class="list-avatar">{{ b.nickname[0] if b.nickname else '?' }}</span>
+        <div>
+          <div>{{ b.nickname }}</div>
+          <div class="meta" dir="ltr" style="text-align:right;">{{ b.iban }}</div>
+        </div>
       </div>
-      <button class="icon-btn" style="background:rgba(239,107,91,0.16);color:var(--danger);" onclick="deleteBeneficiary('{{ b.name }}')">🗑</button>
+      <button class="icon-btn" style="background:rgba(255,107,92,0.16);color:var(--danger);" onclick="deleteBeneficiary('{{ b.name }}')">{{ icon('trash', 16) }}</button>
     </div>
     {% else %}
     <div class="empty-state" id="emptyState">لا يوجد مستفيدون بعد</div>
     {% endfor %}
   </div>
+  <div class="empty-state" id="benNoResults" style="display:none;">لا توجد نتائج مطابقة</div>
 
-  <button class="btn" id="toggleAddBtn" style="margin-top:16px;">+ إضافة مستفيد جديد</button>
+  <button class="btn" id="toggleAddBtn" style="margin-top:16px;">{{ icon('plus', 16) }} إضافة مستفيد جديد</button>
 
   <div class="card" id="addForm" style="display:none;margin-top:16px;">
     <div class="field">
@@ -47,32 +57,55 @@
 <script>
 const toggleBtn = document.getElementById("toggleAddBtn");
 const addForm = document.getElementById("addForm");
+const benSearch = document.getElementById("benSearch");
+const benNoResults = document.getElementById("benNoResults");
+
 toggleBtn.addEventListener("click", () => {
   const visible = addForm.style.display !== "none";
   addForm.style.display = visible ? "none" : "block";
-  toggleBtn.textContent = visible ? "+ إضافة مستفيد جديد" : "إخفاء النموذج";
+  toggleBtn.innerHTML = visible ? {{ icon('plus', 16)|tojson }} + " إضافة مستفيد جديد" : "إخفاء النموذج";
 });
+
+function applyBeneficiarySearch() {
+  const query = benSearch.value.trim().toLowerCase();
+  const items = Array.from(document.querySelectorAll("#beneficiaryList .list-item"));
+  let visibleCount = 0;
+  items.forEach((item) => {
+    const visible = !query || (item.dataset.search || "").includes(query);
+    item.style.display = visible ? "flex" : "none";
+    if (visible) visibleCount++;
+  });
+  benNoResults.style.display = (visibleCount === 0 && items.length > 0) ? "block" : "none";
+}
+
+benSearch.addEventListener("input", applyBeneficiarySearch);
 
 function renderList(list) {
   const container = document.getElementById("beneficiaryList");
   container.innerHTML = "";
   if (!list.length) {
     container.innerHTML = '<div class="empty-state">لا يوجد مستفيدون بعد</div>';
+    benNoResults.style.display = "none";
     return;
   }
   list.forEach((b) => {
     const row = document.createElement("div");
     row.className = "list-item";
     row.dataset.name = b.name;
+    row.dataset.search = `${b.nickname} ${b.iban}`.toLowerCase();
     row.innerHTML = `
       <div>
-        <div>${b.nickname}</div>
-        <div class="meta" dir="ltr" style="text-align:right;">${b.iban}</div>
+        <span class="list-avatar">${(b.nickname && b.nickname[0]) || '?'}</span>
+        <div>
+          <div>${b.nickname}</div>
+          <div class="meta" dir="ltr" style="text-align:right;">${b.iban}</div>
+        </div>
       </div>
-      <button class="icon-btn" style="background:rgba(239,107,91,0.16);color:var(--danger);" onclick="deleteBeneficiary('${b.name}')">🗑</button>
+      <button class="icon-btn" style="background:rgba(255,107,92,0.16);color:var(--danger);" onclick="deleteBeneficiary('${b.name}')">{{ icon('trash', 16) }}</button>
     `;
     container.appendChild(row);
   });
+  applyBeneficiarySearch();
 }
 
 document.getElementById("addBtn").addEventListener("click", async (e) => {

@@ -1,26 +1,76 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% set show_nav = true %}
 {% set active = "transactions" %}
 {% block title %}كشف الحساب - سَند{% endblock %}
 {% block content %}
 <div class="back-row">
-  <a href="/dashboard" class="icon-btn">→</a>
+  <a href="/dashboard" class="icon-btn">{{ icon('chevron-right', 18) }}</a>
   <h2>كشف الحساب</h2>
 </div>
 
 <div class="page-body">
-  <div class="card" style="padding:6px 16px;">
+  <div class="search-bar">
+    <span class="search-icon">{{ icon('search', 17) }}</span>
+    <input type="text" id="txSearch" placeholder="ابحث في العمليات...">
+  </div>
+
+  <div class="filter-chips">
+    <button class="filter-chip active" data-filter="all">الكل</button>
+    <button class="filter-chip" data-filter="in">واردة</button>
+    <button class="filter-chip" data-filter="out">صادرة</button>
+  </div>
+
+  <div class="card" style="padding:6px 16px;" id="txList">
     {% for t in account.transactions %}
-    <div class="list-item">
+    {% set is_outgoing = ('تحويل' in t or '-' in t) %}
+    <div class="list-item tx-item" data-direction="{{ 'out' if is_outgoing else 'in' }}" data-text="{{ t|lower }}">
       <div>
-        <div>{{ t }}</div>
-        <div class="meta">اليوم</div>
+        <span class="list-icon">{{ icon('arrow-up-right') if is_outgoing else icon('arrow-down-left') }}</span>
+        <div>
+          <div class="{{ 'amount-negative' if is_outgoing else 'amount-positive' }}">{{ t }}</div>
+          <div class="meta">اليوم</div>
+        </div>
       </div>
-      <div style="font-size:18px;">{{ '↩️' if 'تحويل' in t or '-' in t else '↪️' }}</div>
     </div>
     {% else %}
     <div class="empty-state">لا توجد عمليات بعد</div>
     {% endfor %}
   </div>
+  <div class="empty-state" id="txNoResults" style="display:none;">لا توجد نتائج مطابقة</div>
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const txSearch = document.getElementById("txSearch");
+const txItems = Array.from(document.querySelectorAll(".tx-item"));
+const txNoResults = document.getElementById("txNoResults");
+const filterChips = Array.from(document.querySelectorAll(".filter-chip"));
+let activeFilter = "all";
+
+function applyFilters() {
+  const query = txSearch.value.trim().toLowerCase();
+  let visibleCount = 0;
+  txItems.forEach((item) => {
+    const matchesFilter = activeFilter === "all" || item.dataset.direction === activeFilter;
+    const matchesSearch = !query || item.dataset.text.includes(query);
+    const visible = matchesFilter && matchesSearch;
+    item.style.display = visible ? "flex" : "none";
+    if (visible) visibleCount++;
+  });
+  txNoResults.style.display = (visibleCount === 0 && txItems.length > 0) ? "block" : "none";
+}
+
+txSearch.addEventListener("input", applyFilters);
+
+filterChips.forEach((chip) => {
+  chip.addEventListener("click", () => {
+    filterChips.forEach((c) => c.classList.remove("active"));
+    chip.classList.add("active");
+    activeFilter = chip.dataset.filter;
+    applyFilters();
+  });
+});
+</script>
 {% endblock %}

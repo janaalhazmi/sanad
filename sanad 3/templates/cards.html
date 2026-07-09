@@ -1,10 +1,11 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% set show_nav = true %}
 {% set active = "cards" %}
 {% block title %}البطاقات - سَند{% endblock %}
 {% block content %}
 <div class="back-row">
-  <a href="/dashboard" class="icon-btn">→</a>
+  <a href="/dashboard" class="icon-btn">{{ icon('chevron-right', 18) }}</a>
   <h2>بطاقاتي</h2>
 </div>
 
@@ -15,17 +16,19 @@
       <span>بطاقة {{ card.type }}</span>
       <span>سَند</span>
     </div>
+    <div class="chip"></div>
     <div class="num">•••• •••• •••• {{ card.number }}</div>
     <div class="row2">
       <div><span>صاحب البطاقة</span><b>{{ account.name }}</b></div>
       <div><span>الحالة</span><b>نشطة</b></div>
+      <div class="contactless">{{ icon('contactless', 20) }}</div>
     </div>
   </div>
   {% else %}
   <div class="empty-state">لا توجد بطاقات مسجلة</div>
   {% endfor %}
 
-  <button class="btn secondary" onclick="showToast('سيتم إصدار بطاقة جديدة قريباً')">+ إصدار بطاقة جديدة</button>
+  <button class="btn secondary" onclick="showToast('سيتم إصدار بطاقة جديدة قريباً')">{{ icon('plus', 16) }} إصدار بطاقة جديدة</button>
 
   <div class="section-title" style="margin-top:22px;">إعدادات البطاقة</div>
   <div class="card">

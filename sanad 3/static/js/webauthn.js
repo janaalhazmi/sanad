@@ -63,15 +63,17 @@ async function registerBiometric() {
     return { success: false, message: "تم إلغاء أو فشل التحقق بالبصمة" };
   }
 
-  if (!credential.response.getPublicKey) {
-    return { success: false, message: "المتصفح لا يدعم استخراج المفتاح العام لهذا النوع من البصمة" };
-  }
-
+  // attestationObject (raw CBOR) is part of the original WebAuthn spec and
+  // always present on every conformant authenticator/browser — unlike the
+  // convenience methods getPublicKey()/getPublicKeyAlgorithm() (Level 3),
+  // which several real browsers (older iOS Safari, in-app webviews, some
+  // Android WebViews) simply don't implement, silently breaking enrollment
+  // there. The server parses attestationObject itself (see webauthn_cbor.py)
+  // so this works on every device that supports WebAuthn at all.
   const payload = {
     id: credential.id,
     clientDataJSON: bufferToB64url(credential.response.clientDataJSON),
-    publicKey: bufferToB64(credential.response.getPublicKey()),
-    alg: credential.response.getPublicKeyAlgorithm(),
+    attestationObject: bufferToB64url(credential.response.attestationObject),
   };
 
   const { data, ok: verifyOk } = await apiFetch("/api/webauthn/register/verify", { method: "POST", body: payload });
@@ -92,6 +94,7 @@ async function loginWithBiometric() {
   const { data: options, ok, status } = await apiFetch("/api/webauthn/login/options", { method: "POST", body: {} });
   if (!ok) {
     if (status === 404) return { success: false, message: "الدخول بالبصمة غير مفعّل على هذا الحساب" };
+    if (status === 423) return { success: false, locked: true, message: options.message || "تم إيقاف تسجيل الدخول مؤقتاً" };
     return { success: false, message: options.message || "تعذر بدء عملية التحقق" };
   }
 
@@ -115,10 +118,11 @@ async function loginWithBiometric() {
     signature: bufferToB64url(assertion.response.signature),
   };
 
-  const { data, ok: verifyOk } = await apiFetch("/api/webauthn/login/verify", { method: "POST", body: payload });
+  const { data, ok: verifyOk, status: verifyStatus } = await apiFetch("/api/webauthn/login/verify", { method: "POST", body: payload });
   if (verifyOk && data.success) {
     return { success: true, redirect: data.redirect || "/dashboard" };
   }
+  if (verifyStatus === 423) return { success: false, locked: true, message: data.message || "تم إيقاف تسجيل الدخول مؤقتاً" };
   return { success: false, message: data.message || "فشل التحقق بالبصمة" };
 }
 
@@ -161,7 +165,7 @@ async function verifyActionWithBiometric() {
 
   const { data, ok: verifyOk } = await apiFetch("/api/action/webauthn/verify", { method: "POST", body: payload });
   if (verifyOk && data.success) {
-    return { success: true, message: data.message, redirect: data.redirect, balance: data.balance };
+    return { success: true, message: data.message, redirect: data.redirect, balance: data.balance, requires_voice: data.requires_voice };
   }
   return { success: false, message: data.message || "فشل التحقق بالبصمة" };
 }

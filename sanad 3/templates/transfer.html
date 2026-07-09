@@ -1,10 +1,11 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% set show_nav = true %}
 {% set active = "transfer" %}
 {% block title %}تحويل - سَند{% endblock %}
 {% block content %}
 <div class="back-row">
-  <a href="/dashboard" class="icon-btn">→</a>
+  <a href="/dashboard" class="icon-btn">{{ icon('chevron-right', 18) }}</a>
   <h2>تحويل أموال</h2>
 </div>
 

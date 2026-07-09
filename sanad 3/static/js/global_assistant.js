@@ -15,44 +15,104 @@
   }
 
   // ------------------------------------------------------------------
-  // Read Screen: dynamically walk the visible DOM and build a spoken
-  // summary. Nothing here is hardcoded per-page.
+  // Read Screen: walk the visible DOM in natural top-to-bottom reading
+  // order and speak only meaningful page content — headings, labels,
+  // balances, buttons, form fields/values, and transaction rows. Chat
+  // bubbles, hidden elements, decorative/icon-only nodes, duplicate text,
+  // and technical/UI chrome (IDs, classes, nav rail, the assistant widget
+  // itself) are all excluded. Nothing here is hardcoded per-page — it's a
+  // generic content walk that works on every screen.
   // ------------------------------------------------------------------
   function isVisible(el) {
+    if (!el || el.nodeType !== 1) return false;
+    if (el.hasAttribute("aria-hidden") && el.getAttribute("aria-hidden") !== "false") return false;
+    if (el.hasAttribute("hidden")) return false;
+    const style = window.getComputedStyle(el);
+    if (style.display === "none" || style.visibility === "hidden" || parseFloat(style.opacity) === 0) return false;
     return !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+  }
+
+  // Elements/subtrees that are never meaningful "page content" to read
+  // aloud: the assistant widget itself, nav/structural chrome, raw
+  // markup/scripts, AND (per the two-speakers separation) every chat
+  // bubble on the assistant page — this floating Read Screen button must
+  // NEVER read AI chat replies; replaying the assistant's latest reply is
+  // the dedicated in-page speaker's job only (see assistant.html's
+  // readScreenBtn, which calls SanadVoice.replayLast() directly and never
+  // touches this file at all).
+  const READ_SCREEN_SKIP_SELECTOR = [
+    "#globalAssistantFab", "#globalAssistantMic", "#globalAssistantRead",
+    ".global-assistant-cluster", "script", "style", "svg", "noscript",
+    ".bottom-nav", ".sheet-handle", ".toast", ".mic-dock", ".voice-status-row",
+    ".bubble", ".chat-area",
+    "[data-no-read]",
+  ].join(", ");
+
+  // Only these tags/classes are ever candidates — deliberately narrow so
+  // generic wrapper <div>s (which would otherwise duplicate their
+  // children's text) never get read themselves. Chat bubbles are
+  // deliberately NOT in this list (see READ_SCREEN_SKIP_SELECTOR above).
+  const READ_SCREEN_CANDIDATE_SELECTOR = [
+    "h1", "h2", "h3", "h4", "p", "label",
+    ".amount", ".label", ".meta", ".sub", ".sheet-greeting",
+    "button:not([aria-hidden])", "a.btn", ".btn",
+    "input", "select", "textarea",
+    ".list-item", ".suggestion-item", ".read-screen-btn",
+    ".switch-row > span:first-child", ".demo-hint", ".section-title",
+  ].join(", ");
+
+  function elementReadableText(el) {
+    const tag = el.tagName.toLowerCase();
+    if (tag === "input") {
+      if (el.type === "checkbox" || el.type === "radio") return "";
+      return (el.value || el.placeholder || "").trim();
+    }
+    if (tag === "textarea") {
+      return (el.value || el.placeholder || "").trim();
+    }
+    if (tag === "select") {
+      const selected = el.options[el.selectedIndex];
+      return selected ? selected.textContent.trim() : "";
+    }
+    const direct = (el.textContent || "").trim();
+    if (direct) return direct;
+    // Icon-only controls (mic/send buttons etc) carry their label in
+    // title/aria-label instead of visible text — fall back to those so
+    // they're still announced instead of silently skipped.
+    return (el.getAttribute("aria-label") || el.getAttribute("title") || "").trim();
+  }
+
+  // Filters out text that's purely decorative/technical noise: bare
+  // punctuation, numeric-only IDs, or anything that still looks like an
+  // icon-only glyph slipped through (defensive — icons are all SVG now
+  // and already excluded above, but keeps this robust either way).
+  function isMeaningfulText(text) {
+    if (!text) return false;
+    if (text.length > 600) return false; // too long to be real UI content — likely a wrapper
+    if (/^[\s\u200e\u200f.,:؛،\-_/\\]*$/.test(text)) return false;
+    return true;
   }
 
   function collectScreenText() {
     const root = document.querySelector(".app-shell") || document.body;
-    const skipSelectors = "#globalAssistantFab, #globalAssistantMic, #globalAssistantRead, script, style";
-    const parts = [];
     const seen = new Set();
+    const parts = [];
 
-    const selector = [
-      "h1", "h2", "h3", "p", "label", ".amount", ".label", ".meta",
-      ".list-item", ".bubble", "button", ".btn", "a.btn", "input", "select",
-      ".switch-row span:first-child", ".demo-hint",
-    ].join(", ");
+    const candidates = root.querySelectorAll(READ_SCREEN_CANDIDATE_SELECTOR);
 
-    root.querySelectorAll(selector).forEach((el) => {
-      if (el.closest(skipSelectors)) return;
+    candidates.forEach((el) => {
+      if (el.closest(READ_SCREEN_SKIP_SELECTOR)) return;
       if (!isVisible(el)) return;
 
-      let text = "";
-      const tag = el.tagName.toLowerCase();
-      if (tag === "input") {
-        const label = el.value || el.placeholder || "";
-        if (!label) return;
-        text = label;
-      } else if (tag === "select") {
-        const selected = el.options[el.selectedIndex];
-        text = selected ? selected.textContent.trim() : "";
-      } else {
-        text = el.textContent.trim();
-      }
+      // Skip a candidate whose meaningful text is already fully covered by
+      // an ancestor OR a descendant that's also in our candidate list —
+      // keeps only the innermost/most specific readable node so nothing
+      // gets spoken twice (e.g. a .list-item wrapping its own <span>s).
+      if (el.closest(".list-item") && !el.classList.contains("list-item")) return;
+      if (el.matches(".btn, button") && el.closest(".btn, button") !== el) return;
 
-      text = text.replace(/\s+/g, " ").trim();
-      if (!text || text.length > 200) return;
+      const text = elementReadableText(el).replace(/\s+/g, " ").trim();
+      if (!isMeaningfulText(text)) return;
       if (seen.has(text)) return;
       seen.add(text);
       parts.push(text);
@@ -65,6 +125,13 @@
   }
 
   function speak(text, lang) {
+    if (window.SanadVoice) {
+      window.SanadVoice.speak(text, { lang: lang || "ar-SA" });
+      return;
+    }
+    // Defensive fallback in the unlikely case voice_player.js failed to
+    // load — keeps this widget working exactly as it did before the
+    // voice subsystem existed.
     if (!("speechSynthesis" in window)) {
       showToast(text, "");
       return;
@@ -122,42 +189,14 @@
 
     readBtn.addEventListener("click", readScreen);
 
-    const SpeechRecognitionImpl = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognitionImpl) {
-      micBtn.addEventListener("click", () => {
-        const said = window.prompt("متصفحك لا يدعم التعرف على الصوت. اكتب طلبك هنا:");
-        if (said) sendToAssistant(said);
-      });
-      return;
-    }
-
-    const recognition = new SpeechRecognitionImpl();
-    recognition.lang = "ar-SA";
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    let listening = false;
-
-    recognition.onresult = (event) => sendToAssistant(event.results[0][0].transcript);
-    recognition.onerror = () => {
-      listening = false;
-      micBtn.classList.remove("listening");
-      showToast("تعذر التعرف على الصوت، حاول مرة أخرى", "error");
-    };
-    recognition.onend = () => {
-      listening = false;
-      micBtn.classList.remove("listening");
-    };
-
-    micBtn.addEventListener("click", () => {
-      if (listening) { recognition.stop(); return; }
-      try {
-        recognition.start();
-        listening = true;
-        micBtn.classList.add("listening");
-      } catch (e) {
-        showToast("تعذر تشغيل الميكروفون", "error");
-      }
+    const micController = createMicController({
+      lang: () => "ar-SA",
+      onTranscript: (text) => sendToAssistant(text),
+      onListeningChange: (isListening) => micBtn.classList.toggle("listening", isListening),
+      onStatus: (message, type) => showToast(message, type),
     });
+
+    micBtn.addEventListener("click", () => micController.toggle());
   }
 
   if (document.readyState === "loading") {
@@ -165,4 +204,10 @@
   } else {
     init();
   }
+
+  // Exposed so accessibility.js (Senior Mode's automatic screen reading)
+  // can reuse this exact DOM-walking + speak logic instead of duplicating
+  // it — the global widget's "read screen" button and Senior Mode's
+  // auto-read both end up calling the same function.
+  window.SanadGlobalAssistant = { readScreen, collectScreenText };
 })();

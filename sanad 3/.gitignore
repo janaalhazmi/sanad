@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.log
+
+# Voice-auth enrollment stores real speaker embeddings — local demo state,
+# not something to ship in version control.
+voice_auth_store/
+voice_auth_embeddings/

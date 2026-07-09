@@ -1,14 +1,26 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% set show_nav = true %}
 {% set active = "settings" %}
 {% block title %}الإعدادات - سَند{% endblock %}
 {% block content %}
 <div class="back-row">
-  <a href="/dashboard" class="icon-btn">→</a>
+  <a href="/dashboard" class="icon-btn">{{ icon('chevron-right', 18) }}</a>
   <h2>الإعدادات</h2>
 </div>
 
 <div class="page-body">
+  <div class="section-title">المظهر</div>
+  <div class="card">
+    <div class="switch-row" style="border-bottom:none;">
+      <div>
+        <span>الوضع الليلي</span>
+        <div class="desc">مظهر داكن مريح للعين، أو مظهر فاتح واضح</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="darkModeToggle"><span class="track"></span></label>
+    </div>
+  </div>
+
   <div class="section-title">المعلومات الشخصية</div>
   <div class="card">
     <div class="field">
@@ -22,6 +34,17 @@
     <div class="field" style="margin-bottom:0;">
       <label>كلمة مرور جديدة (اتركها فارغة لعدم التغيير)</label>
       <input type="password" id="settingsPassword" placeholder="••••">
+    </div>
+  </div>
+
+  <div class="section-title">إمكانية الوصول</div>
+  <div class="card">
+    <div class="switch-row" style="border-bottom:none;">
+      <div>
+        <span>وضع كبار السن وإعدادات إمكانية الوصول</span>
+        <div class="desc">خطوط أكبر، تباين أعلى، وقراءة صوتية تلقائية</div>
+      </div>
+      <a href="/accessibility-page" class="icon-btn">{{ icon('chevron-left', 18) }}</a>
     </div>
   </div>
 
@@ -43,6 +66,69 @@
       <label class="switch"><input type="checkbox" checked><span class="track"></span></label>
     </div>
   </div>
+
+  <div class="section-title">التحقق الصوتي (بصمة الصوت)</div>
+  <div class="card">
+    <div class="switch-row">
+      <div>
+        <span>تفعيل التحقق الصوتي</span>
+        <div class="desc" id="voiceAuthStatusText">جارِ التحقق...</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="voiceAuthToggle" disabled><span class="track"></span></label>
+    </div>
+    <p style="font-size:12px;color:var(--text-muted);margin:4px 0 14px;">
+      عند التفعيل، سيُطلب منك تسجيل صوتك كخطوة إضافية بعد البصمة أو رمز
+      التحقق عند إجراء تحويل أو إضافة مستفيد — لن يحل محلهما أبداً.
+    </p>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button class="btn secondary" id="voiceAuthEnrollBtn">{{ icon('mic', 16) }} تسجيل بصمة صوتية</button>
+      <button class="btn danger" id="voiceAuthDeleteBtn" style="display:none;">حذف البصمة الصوتية</button>
+    </div>
+    <div id="voiceAuthEnrollProgress" style="display:none; margin-top:14px; text-align:center;">
+      <div class="fingerprint" id="voiceAuthEnrollIcon">{{ icon('mic', 34) }}</div>
+      <div class="waveform" id="voiceAuthWaveform" style="margin-bottom:10px;"></div>
+      <p id="voiceAuthEnrollStatus" style="color:var(--text-muted);">استعد للتسجيل...</p>
+    </div>
+  </div>
+
+  <div class="section-title">الصوت</div>
+  <div class="card">
+    <div class="field">
+      <label>مزوّد الصوت</label>
+      <select id="voiceProvider">
+        <option value="auto">تلقائي (الأفضل المتاح)</option>
+        <option value="edge">Edge Neural TTS</option>
+        <option value="openai">OpenAI TTS</option>
+        <option value="browser">صوت المتصفح الافتراضي</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>سرعة الحديث: <span id="voiceSpeedValue">1.0x</span></label>
+      <input type="range" id="voiceSpeed" min="0.5" max="2.0" step="0.1" value="1.0" style="width:100%;">
+    </div>
+    <div class="field">
+      <label>مستوى الصوت: <span id="voiceVolumeValue">100%</span></label>
+      <input type="range" id="voiceVolume" min="0" max="1" step="0.05" value="1.0" style="width:100%;">
+    </div>
+    <div class="field" style="margin-bottom:0;">
+      <label>جنس الصوت</label>
+      <select id="voiceGender">
+        <option value="male">رجل</option>
+        <option value="female">امرأة</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="switch-row" style="border-bottom:none;">
+      <div>
+        <span>كلمة التنبيه ("يا سند")</span>
+        <div class="desc">يستمع التطبيق باستمرار لكلمة "يا سند" لبدء أمر صوتي دون الحاجة للضغط على الميكروفون</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="wakeWordToggle"><span class="track"></span></label>
+    </div>
+  </div>
+  <button class="btn secondary" id="testVoiceBtn" style="margin-top:8px;margin-bottom:16px;">{{ icon('speaker', 16) }} تجربة الصوت</button>
 
   <button class="btn" id="saveSettingsBtn" style="margin-top:16px;">حفظ التغييرات</button>
   <button class="btn danger" style="margin-top:12px;" onclick="logout()">تسجيل الخروج</button>
@@ -120,6 +206,212 @@ bioToggle.addEventListener("change", async () => {
       bioToggle.checked = true;
       showToast(data.message || "تعذر إيقاف الدخول بالبصمة", "error");
     }
+  }
+});
+
+// ---------------- Voice settings ----------------
+const voiceProvider = document.getElementById("voiceProvider");
+const voiceSpeed = document.getElementById("voiceSpeed");
+const voiceVolume = document.getElementById("voiceVolume");
+const voiceGender = document.getElementById("voiceGender");
+const voiceSpeedValue = document.getElementById("voiceSpeedValue");
+const voiceVolumeValue = document.getElementById("voiceVolumeValue");
+
+(async function initVoiceSettings() {
+  const { data } = await apiFetch("/api/voice/settings");
+  if (!data || !data.success) return;
+  const s = data.settings;
+  voiceProvider.value = s.provider || "auto";
+  voiceSpeed.value = s.speed != null ? s.speed : 1.0;
+  voiceVolume.value = s.volume != null ? s.volume : 1.0;
+  voiceGender.value = s.gender || "male";
+  voiceSpeedValue.textContent = `${parseFloat(voiceSpeed.value).toFixed(1)}x`;
+  voiceVolumeValue.textContent = `${Math.round(parseFloat(voiceVolume.value) * 100)}%`;
+})();
+
+async function applyVoiceSetting(partialUpdate) {
+  if (window.SanadVoice) {
+    await window.SanadVoice.saveSettings(partialUpdate);
+  } else {
+    await apiFetch("/api/voice/settings", { method: "POST", body: partialUpdate });
+  }
+}
+
+voiceProvider.addEventListener("change", () => applyVoiceSetting({ provider: voiceProvider.value }));
+voiceGender.addEventListener("change", () => applyVoiceSetting({ gender: voiceGender.value }));
+
+voiceSpeed.addEventListener("input", () => {
+  voiceSpeedValue.textContent = `${parseFloat(voiceSpeed.value).toFixed(1)}x`;
+});
+voiceSpeed.addEventListener("change", () => applyVoiceSetting({ speed: parseFloat(voiceSpeed.value) }));
+
+voiceVolume.addEventListener("input", () => {
+  voiceVolumeValue.textContent = `${Math.round(parseFloat(voiceVolume.value) * 100)}%`;
+});
+voiceVolume.addEventListener("change", () => applyVoiceSetting({ volume: parseFloat(voiceVolume.value) }));
+
+document.getElementById("testVoiceBtn").addEventListener("click", () => {
+  if (window.SanadVoice) {
+    window.SanadVoice.speak("مرحباً، هذا مثال على صوتي الحالي.", { lang: "ar-SA" });
+  }
+});
+
+// ---------------- Dark / Light theme ----------------
+const darkModeToggle = document.getElementById("darkModeToggle");
+darkModeToggle.checked = (window.SANAD_THEME || "dark") === "dark";
+
+darkModeToggle.addEventListener("change", async () => {
+  const newTheme = darkModeToggle.checked ? "dark" : "light";
+  // Apply instantly, before the network round trip finishes.
+  document.documentElement.setAttribute("data-theme", newTheme);
+  darkModeToggle.disabled = true;
+  const { data } = await apiFetch("/api/theme", { method: "POST", body: { theme: newTheme } });
+  darkModeToggle.disabled = false;
+  if (data && data.success) {
+    window.SANAD_THEME = newTheme;
+    showToast(data.message, "success");
+  } else {
+    // Revert on failure.
+    document.documentElement.setAttribute("data-theme", newTheme === "dark" ? "light" : "dark");
+    darkModeToggle.checked = !darkModeToggle.checked;
+    showToast((data && data.message) || "تعذر تغيير المظهر", "error");
+  }
+});
+
+// ---------------- Voice Authentication (voice biometric) ----------------
+const voiceAuthToggle = document.getElementById("voiceAuthToggle");
+const voiceAuthStatusText = document.getElementById("voiceAuthStatusText");
+const voiceAuthEnrollBtn = document.getElementById("voiceAuthEnrollBtn");
+const voiceAuthDeleteBtn = document.getElementById("voiceAuthDeleteBtn");
+const voiceAuthEnrollProgress = document.getElementById("voiceAuthEnrollProgress");
+const voiceAuthEnrollIcon = document.getElementById("voiceAuthEnrollIcon");
+const voiceAuthEnrollStatus = document.getElementById("voiceAuthEnrollStatus");
+
+const VOICE_AUTH_PHRASES = [
+  "أنا أستخدم تطبيق سَند لتأكيد هويتي",
+  "صوتي هو بصمتي الآمنة في سَند",
+  "أؤكد أن هذا الحساب يخصني",
+];
+
+function renderVoiceAuthStatus(status) {
+  if (!status.available) {
+    voiceAuthStatusText.textContent = "خدمة التحقق الصوتي غير متاحة على هذا الخادم حالياً";
+    voiceAuthToggle.disabled = true;
+    voiceAuthEnrollBtn.disabled = true;
+    voiceAuthDeleteBtn.style.display = status.enrolled ? "inline-block" : "none";
+    return;
+  }
+  voiceAuthEnrollBtn.disabled = false;
+  voiceAuthToggle.disabled = !status.enrolled;
+  voiceAuthToggle.checked = !!status.enabled;
+  voiceAuthDeleteBtn.style.display = status.enrolled ? "inline-block" : "none";
+  voiceAuthEnrollBtn.textContent = status.enrolled ? "إعادة تسجيل البصمة الصوتية" : "تسجيل بصمة صوتية";
+  voiceAuthEnrollBtn.innerHTML = (status.enrolled ? {{ icon('mic', 16)|tojson }} + " إعادة تسجيل البصمة الصوتية" : {{ icon('mic', 16)|tojson }} + " تسجيل بصمة صوتية");
+
+  if (!status.enrolled) {
+    voiceAuthStatusText.textContent = "غير مسجّلة — سجّل بصمتك الصوتية لتفعيلها";
+  } else if (status.enabled) {
+    voiceAuthStatusText.textContent = `مفعّلة (${status.sample_count} عينات مسجّلة)`;
+  } else {
+    voiceAuthStatusText.textContent = "مسجّلة لكن غير مفعّلة كخطوة تحقق إضافية بعد";
+  }
+}
+
+async function refreshVoiceAuthStatus() {
+  const { data } = await apiFetch("/api/voice-auth/status");
+  if (data && data.success) renderVoiceAuthStatus(data.status);
+  return data && data.status;
+}
+
+refreshVoiceAuthStatus();
+
+voiceAuthToggle.addEventListener("change", async () => {
+  const desired = voiceAuthToggle.checked;
+  voiceAuthToggle.disabled = true;
+  const { data } = await apiFetch("/api/voice-auth/settings", { method: "POST", body: { enabled: desired } });
+  voiceAuthToggle.disabled = false;
+  if (data && data.success) {
+    showToast(data.message, "success");
+    renderVoiceAuthStatus(data.status);
+  } else {
+    voiceAuthToggle.checked = !desired;
+    showToast((data && data.message) || "تعذر تحديث حالة التحقق الصوتي", "error");
+  }
+});
+
+voiceAuthDeleteBtn.addEventListener("click", async () => {
+  voiceAuthDeleteBtn.disabled = true;
+  const { data } = await apiFetch("/api/voice-auth/delete", { method: "POST" });
+  voiceAuthDeleteBtn.disabled = false;
+  if (data && data.success) {
+    showToast(data.message, "success");
+    refreshVoiceAuthStatus();
+  } else {
+    showToast((data && data.message) || "تعذر حذف البصمة الصوتية", "error");
+  }
+});
+
+voiceAuthEnrollBtn.addEventListener("click", async () => {
+  if (!window.SanadVoiceAuthRecorder) {
+    showToast("المتصفح لا يدعم تسجيل الصوت", "error");
+    return;
+  }
+
+  voiceAuthEnrollBtn.disabled = true;
+  voiceAuthEnrollProgress.style.display = "block";
+  const enrollWaveform = SanadWaveform.create(document.getElementById("voiceAuthWaveform"));
+  let enrollMicStream = null;
+  try {
+    enrollMicStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    enrollWaveform.start(enrollMicStream);
+  } catch (e) { /* purely cosmetic — recording itself doesn't depend on this */ }
+
+  try {
+    const samples = [];
+    for (let i = 0; i < VOICE_AUTH_PHRASES.length; i++) {
+      voiceAuthEnrollStatus.textContent = `قل بوضوح: "${VOICE_AUTH_PHRASES[i]}" (عينة ${i + 1} من ${VOICE_AUTH_PHRASES.length})`;
+      voiceAuthEnrollIcon.classList.add("scanning");
+      await new Promise((r) => setTimeout(r, 1200)); // give the user a moment to read the phrase
+      voiceAuthEnrollStatus.innerHTML = '<span class="rec-dot"></span> جارِ التسجيل الآن...';
+      const sample = await window.SanadVoiceAuthRecorder.recordSample(3000);
+      samples.push(sample);
+      voiceAuthEnrollIcon.classList.remove("scanning");
+    }
+
+    voiceAuthEnrollStatus.textContent = "جارِ معالجة التسجيل...";
+    const { data } = await apiFetch("/api/voice-auth/enroll", { method: "POST", body: { samples } });
+
+    if (data && data.success) {
+      showToast(data.message, "success");
+      renderVoiceAuthStatus(data.status);
+    } else {
+      showToast((data && data.message) || "تعذر إتمام التسجيل الصوتي", "error");
+    }
+  } catch (e) {
+    showToast("تعذر الوصول إلى الميكروفون", "error");
+  } finally {
+    enrollWaveform.stop();
+    if (enrollMicStream) enrollMicStream.getTracks().forEach((t) => t.stop());
+    voiceAuthEnrollBtn.disabled = false;
+    voiceAuthEnrollProgress.style.display = "none";
+  }
+});
+
+// ---------------- Wake word ----------------
+const wakeWordToggle = document.getElementById("wakeWordToggle");
+wakeWordToggle.checked = !!window.SANAD_WAKE_WORD_ENABLED;
+
+wakeWordToggle.addEventListener("change", async () => {
+  const desired = wakeWordToggle.checked;
+  wakeWordToggle.disabled = true;
+  const { data } = await apiFetch("/api/wake-word/settings", { method: "POST", body: { enabled: desired } });
+  wakeWordToggle.disabled = false;
+  if (data && data.success) {
+    showToast(data.message, "success");
+    if (window.SanadWakeWord) window.SanadWakeWord.setEnabled(desired);
+  } else {
+    wakeWordToggle.checked = !desired;
+    showToast((data && data.message) || "تعذر حفظ الإعداد", "error");
   }
 });
 </script>

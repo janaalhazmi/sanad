@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% set show_nav = false %}
 {% block title %}المساعد - سَند{% endblock %}
 {% block content %}
@@ -20,16 +21,16 @@
   </div>
 </div>
 
-<div class="assistant-sheet" style="position:static; max-height:none; border-bottom-left-radius:0; border-bottom-right-radius:0; margin-top:-40px;">
+<div class="assistant-sheet glass" style="position:static; max-height:none; border-bottom-left-radius:0; border-bottom-right-radius:0; margin-top:-40px;">
   <div class="sheet-handle"></div>
   <div class="sheet-top-row">
-    <a href="/dashboard" class="sheet-close">✕</a>
+    <a href="/dashboard" class="sheet-close">{{ icon('close', 15) }}</a>
     <div class="sheet-assistant-id">
       <div class="titles">
         <div class="t1">المساعد الصوتي</div>
         <div class="t2">العربية والإنجليزية</div>
       </div>
-      <div class="mic-avatar">🎙️</div>
+      <div class="mic-avatar">{{ icon('mic', 19) }}</div>
     </div>
   </div>
 
@@ -41,12 +42,12 @@
   <div class="sheet-greeting">كيف يمكنني مساعدتك اليوم؟</div>
 
   <div class="chat-area" id="chatArea">
-    <div class="bubble bot">مرحباً {{ account.name }}، أنا سَند 🤖<br>لتحويل مبلغ: اختر المستفيد، أدخل المبلغ، ثم أكّد بالبصمة — أو فقط أخبرني بذلك.</div>
+    <div class="bubble bot">مرحباً {{ account.name }}، أنا سَند<br>لتحويل مبلغ: اختر المستفيد، أدخل المبلغ، ثم أكّد بالبصمة — أو فقط أخبرني بذلك.</div>
   </div>
 
   <button class="read-screen-btn" id="readScreenBtn">
     اقرأ محتوى الشاشة
-    <span class="speaker">🔊</span>
+    <span class="speaker">{{ icon('speaker', 14) }}</span>
   </button>
 
   <div class="suggestion-list" id="suggestionList">
@@ -63,9 +64,10 @@
 </div>
 
 <div class="chat-input-row">
-  <button class="mic-inline" id="micBtn" title="اضغط للتحدث">🎙️</button>
+  <button class="mic-inline" id="micBtn" title="اضغط للتحدث">{{ icon('mic', 20) }}</button>
+  <div class="waveform" id="micWaveform" style="display:none; width:56px;"></div>
   <input type="text" id="textInput" placeholder="اكتب رسالتك هنا...">
-  <button id="sendBtn">➤</button>
+  <button id="sendBtn" aria-label="إرسال الرسالة">{{ icon('send', 17) }}</button>
 </div>
 {% endblock %}
 
@@ -102,7 +104,22 @@ function addBubble(text, cls) {
   return b;
 }
 
+function addThinkingBubble() {
+  const b = document.createElement("div");
+  b.className = "bubble bot";
+  // innerHTML is safe here: fixed markup, no user-controlled content.
+  b.innerHTML = '<span class="thinking-dots"><span></span><span></span><span></span></span>';
+  chatArea.appendChild(b);
+  chatArea.scrollTop = chatArea.scrollHeight;
+  return b;
+}
+
 function speak(text) {
+  if (window.SanadVoice) {
+    window.SanadVoice.speak(text, { lang: currentLang });
+    return;
+  }
+  // Defensive fallback if voice_player.js somehow failed to load.
   if (!("speechSynthesis" in window)) return;
   window.speechSynthesis.cancel();
   const utter = new SpeechSynthesisUtterance(text);
@@ -114,12 +131,28 @@ function speak(text) {
   window.speechSynthesis.speak(utter);
 }
 
+if (window.SanadVoice) {
+  window.SanadVoice.onStateChange((state) => {
+    voiceStatusRow.style.display = (state === "speaking" || state === "paused") ? "flex" : "none";
+  });
+}
+
 document.getElementById("stopVoiceBtn").addEventListener("click", () => {
-  window.speechSynthesis.cancel();
+  if (window.SanadVoice) {
+    window.SanadVoice.stop();
+  } else {
+    window.speechSynthesis.cancel();
+  }
   voiceStatusRow.style.display = "none";
 });
 
-document.getElementById("readScreenBtn").addEventListener("click", () => speak(lastBotText));
+document.getElementById("readScreenBtn").addEventListener("click", () => {
+  if (window.SanadVoice) {
+    window.SanadVoice.replayLast();
+  } else {
+    speak(lastBotText);
+  }
+});
 
 suggestionList.addEventListener("click", (e) => {
   const item = e.target.closest(".suggestion-item");
@@ -129,30 +162,24 @@ suggestionList.addEventListener("click", (e) => {
 let lastEnteredAmount = null;
 let lastSelectedBeneficiary = null;
 
-async function sendMessage(message) {
-  if (!message || !message.trim()) return;
-  addBubble(message, "user");
-  textInput.value = "";
+function buildContext() {
+  return {
+    page: "assistant",
+    entered_amount: lastEnteredAmount,
+    selected_beneficiary: lastSelectedBeneficiary,
+    lang: currentLang,
+  };
+}
 
-  const thinking = addBubble("...", "bot");
-
-  const { data } = await apiFetch("/api/assistant", {
-    method: "POST",
-    body: {
-      message,
-      context: {
-        page: "assistant",
-        entered_amount: lastEnteredAmount,
-        selected_beneficiary: lastSelectedBeneficiary,
-        lang: currentLang,
-      },
-    },
-  });
-
-  thinking.remove();
-
+function finishAssistantTurn(data, bubbleEl) {
   const responseText = data.response || "عذراً، حدث خطأ في الاتصال بالمساعد.";
-  addBubble(responseText, "bot");
+  if (bubbleEl) {
+    bubbleEl.textContent = responseText;
+    bubbleEl.classList.remove("streaming");
+    lastBotText = responseText;
+  } else {
+    addBubble(responseText, "bot");
+  }
   speak(responseText);
 
   const action = data.action || {};
@@ -170,47 +197,151 @@ async function sendMessage(message) {
   }
 }
 
+// Falls back to the plain, non-streaming /api/assistant call — used when
+// the streaming endpoint isn't resolvable locally (a tool proposal like a
+// transfer/add-beneficiary that must go through the OTP/WebAuthn gate), or
+// when streaming itself fails for any reason (network hiccup, older
+// browser without fetch-stream support, etc). This guarantees every
+// message still gets answered exactly as before streaming existed.
+async function sendMessageBlocking(message, thinking) {
+  const { data } = await apiFetch("/api/assistant", {
+    method: "POST",
+    body: { message, context: buildContext() },
+  });
+  if (thinking) thinking.remove();
+  finishAssistantTurn(data, null);
+}
+
+async function sendMessage(message) {
+  if (!message || !message.trim()) return;
+  addBubble(message, "user");
+  textInput.value = "";
+
+  const thinking = addThinkingBubble();
+
+  if (!window.fetch || !window.ReadableStream) {
+    await sendMessageBlocking(message, thinking);
+    return;
+  }
+
+  try {
+    const res = await fetch("/api/assistant/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, context: buildContext() }),
+    });
+    if (!res.ok || !res.body) {
+      thinking.remove();
+      await sendMessageBlocking(message, null);
+      return;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let streamBubble = null;
+    let streamedText = "";
+    let settled = false;
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let sepIndex;
+      while ((sepIndex = buffer.indexOf("\n\n")) !== -1) {
+        const rawEvent = buffer.slice(0, sepIndex);
+        buffer = buffer.slice(sepIndex + 2);
+        const line = rawEvent.split("\n").find((l) => l.startsWith("data:"));
+        if (!line) continue;
+
+        let payload;
+        try {
+          payload = JSON.parse(line.slice(5).trim());
+        } catch (e) {
+          continue;
+        }
+
+        if (payload.type === "delta") {
+          if (thinking && thinking.isConnected) thinking.remove();
+          if (!streamBubble) {
+            streamBubble = document.createElement("div");
+            streamBubble.className = "bubble bot streaming";
+            chatArea.appendChild(streamBubble);
+          }
+          streamedText += payload.text || "";
+          streamBubble.textContent = streamedText;
+          chatArea.scrollTop = chatArea.scrollHeight;
+        } else if (payload.type === "final") {
+          if (thinking && thinking.isConnected) thinking.remove();
+          settled = true;
+          finishAssistantTurn(payload, streamBubble);
+        } else if (payload.type === "redo_sync") {
+          settled = true;
+          if (streamBubble) streamBubble.remove();
+          await sendMessageBlocking(message, thinking);
+        }
+      }
+      if (settled) break;
+    }
+
+    if (!settled) {
+      // Stream ended with no recognizable final/redo_sync event — recover
+      // gracefully instead of leaving the user without a reply.
+      if (thinking && thinking.isConnected) thinking.remove();
+      if (streamBubble && streamedText) {
+        finishAssistantTurn({ response: streamedText, action: null }, streamBubble);
+      } else {
+        await sendMessageBlocking(message, null);
+      }
+    }
+  } catch (e) {
+    if (thinking && thinking.isConnected) thinking.remove();
+    await sendMessageBlocking(message, null);
+  }
+}
+
 sendBtn.addEventListener("click", () => sendMessage(textInput.value));
 textInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") sendMessage(textInput.value);
 });
 
-// ---------------- Speech recognition ----------------
-const SpeechRecognitionImpl = window.SpeechRecognition || window.webkitSpeechRecognition;
-let recognition = null;
-let listening = false;
+// ---------------- Speech recognition (native + server-side Whisper fallback) ----------------
+// Real animated waveform while the mic is recording: the native path's
+// SpeechRecognition manages its own audio capture internally (no
+// accessible stream), so a second, parallel getUserMedia stream is opened
+// purely to visualize live input level — browsers allow multiple
+// simultaneous consumers of the same mic once permission is granted.
+// Never affects the recognition result itself. In the server-side
+// fallback path, stt_fallback.js owns the actual recording stream, so
+// this visualization stream is a separate, purely cosmetic one either way.
+const micWaveformEl = document.getElementById("micWaveform");
+const micWaveform = SanadWaveform.create(micWaveformEl);
+let micVizStream = null;
 
-if (SpeechRecognitionImpl) {
-  recognition = new SpeechRecognitionImpl();
-  recognition.continuous = false;
-  recognition.interimResults = false;
-
-  recognition.onresult = (event) => sendMessage(event.results[0][0].transcript);
-  recognition.onerror = () => {
-    listening = false;
-    micBtn.classList.remove("listening");
-    showToast("تعذر التعرف على الصوت، حاول مرة أخرى", "error");
-  };
-  recognition.onend = () => {
-    listening = false;
-    micBtn.classList.remove("listening");
-  };
-
-  micBtn.addEventListener("click", () => {
-    if (listening) { recognition.stop(); return; }
-    recognition.lang = currentLang;
-    try {
-      recognition.start();
-      listening = true;
-      micBtn.classList.add("listening");
-    } catch (e) {
-      showToast("تعذر تشغيل الميكروفون", "error");
-    }
-  });
-} else {
-  micBtn.addEventListener("click", () => {
-    showToast("المتصفح لا يدعم التعرف على الصوت، يمكنك الكتابة بدلاً من ذلك", "error");
-  });
+async function startMicVisualization() {
+  try {
+    micVizStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    micWaveformEl.style.display = "flex";
+    micWaveform.start(micVizStream);
+  } catch (e) { /* purely cosmetic */ }
 }
+function stopMicVisualization() {
+  micWaveform.stop();
+  micWaveformEl.style.display = "none";
+  if (micVizStream) { micVizStream.getTracks().forEach((t) => t.stop()); micVizStream = null; }
+}
+
+const micController = createMicController({
+  lang: () => currentLang || "ar-SA",
+  onTranscript: (text) => sendMessage(text),
+  onListeningChange: (isListening) => {
+    micBtn.classList.toggle("listening", isListening);
+    if (isListening) startMicVisualization(); else stopMicVisualization();
+  },
+  onStatus: (message, type) => showToast(message, type),
+});
+
+micBtn.addEventListener("click", () => micController.toggle());
 </script>
 {% endblock %}

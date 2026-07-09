@@ -1,7 +1,34 @@
-Flask
-flask-cors
-gunicorn
-joblib
-pandas
+# ---- Core (required) ----
+flask>=3.0
+requests
+cryptography
 scikit-learn
+joblib
 numpy
+python-dotenv
+
+# ---- Optional: CORS (only needed if the frontend is served from a
+# different origin than the API) ----
+flask-cors
+
+# ---- Optional: AI fallback layer (Step 2). The app runs fine without
+# this — it just always falls back to the local NLU — but you'll need
+# it + a real OPENAI_API_KEY environment variable for GPT-5/4.1 fallback,
+# general banking Q&A, and product/travel recommendations. ----
+openai>=1.55.0
+
+# ---- Optional: Voice subsystem (Step 3), neural TTS. The app degrades
+# gracefully to the browser's built-in voice without these. ----
+edge-tts
+
+# ---- Voice Authentication (Step 4). The app runs fine without either
+# package installed -- voice auth just reports "unavailable" and can't be
+# enabled, and verification FAILS CLOSED without a real provider, by
+# design (see voice_auth/engine.py). `resemblyzer` is installed by default
+# below so voice enrollment/verification actually works out of the box
+# with a light install; swap to speechbrain+torch+torchaudio for better
+# accuracy if you can afford the larger (~1GB+) install.
+resemblyzer
+# speechbrain
+# torch
+# torchaudio

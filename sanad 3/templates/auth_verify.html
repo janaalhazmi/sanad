@@ -1,9 +1,10 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% set show_nav = false %}
 {% block title %}التحقق من الهوية - سَند{% endblock %}
 {% block content %}
 <div class="back-row">
-  <button class="icon-btn" id="cancelBtn">✕</button>
+  <button class="icon-btn" id="cancelBtn">{{ icon('close', 16) }}</button>
   <h2>تأكيد العملية</h2>
 </div>
 
@@ -17,15 +18,15 @@
     <div class="steps"><span class="dot active"></span><span class="dot"></span></div>
     <p style="text-align:center; color:var(--text-muted); margin-bottom:18px;">اختر طريقة التحقق</p>
     <div class="login-actions">
-      <button class="btn" id="chooseFingerprintBtn">🔐 التحقق بالبصمة</button>
-      <button class="btn secondary" id="chooseOtpBtn">📩 التحقق برمز الرسائل (OTP)</button>
+      <button class="btn" id="chooseFingerprintBtn">{{ icon('fingerprint', 17) }} التحقق بالبصمة</button>
+      <button class="btn secondary" id="chooseOtpBtn">{{ icon('envelope', 17) }} التحقق برمز الرسائل (OTP)</button>
     </div>
   </div>
 
   <!-- Fingerprint section -->
   <div id="fpSection" style="display:none;">
     <div class="card biometric-wrap">
-      <div class="fingerprint" id="fingerprintIcon">👆</div>
+      <div class="fingerprint" id="fingerprintIcon">{{ icon('fingerprint', 44) }}</div>
       <p id="fpStatus">اضغط لبدء التحقق بالبصمة</p>
     </div>
     <button class="btn" id="scanBtn">مسح البصمة</button>
@@ -46,7 +47,7 @@
       </div>
       <div id="demoOtpHint" style="font-size:12px;color:var(--text-muted);margin-top:6px;"></div>
       <div style="display:flex; gap:8px; justify-content:center; margin-top:14px;">
-        <button class="btn ghost small" id="micOtpBtn">🎙️ نطق الرمز</button>
+        <button class="btn ghost small" id="micOtpBtn">{{ icon('mic', 14) }} نطق الرمز</button>
         <button class="btn ghost small" id="resendOtpBtn">إعادة الإرسال</button>
       </div>
     </div>
@@ -54,10 +55,22 @@
     <button class="btn secondary" id="switchToFpBtn" style="margin-top:12px; display:none;">التحقق بالبصمة بدلاً من ذلك</button>
   </div>
 
+  <!-- Voice verification (only shown when the account has Voice Authentication
+       enabled AND primary auth -- fingerprint or OTP -- has already succeeded
+       for this pending action; see /api/action/status's primary_verified flag) -->
+  <div id="voiceAuthSection" style="display:none;">
+    <div class="card biometric-wrap">
+      <div class="fingerprint" id="voiceVerifyIcon">{{ icon('mic', 44) }}</div>
+      <div class="waveform" id="voiceVerifyWaveform" style="margin-bottom:10px;"></div>
+      <p id="voiceVerifyStatus">اضغط لتسجيل صوتك للتأكيد النهائي</p>
+    </div>
+    <button class="btn" id="voiceVerifyBtn">{{ icon('mic', 16) }} سجّل صوتك الآن</button>
+  </div>
+
   <!-- Result -->
   <div id="resultSection" style="display:none;">
     <div class="card" style="text-align:center;">
-      <div id="resultIcon" style="font-size:46px;margin-bottom:10px;">✅</div>
+      <div id="resultIcon" style="margin-bottom:10px; display:flex; justify-content:center;"></div>
       <h3 id="resultTitle">تم التحقق بنجاح</h3>
       <p id="resultMessage" style="color:var(--text-muted);"></p>
     </div>
@@ -75,20 +88,25 @@ const summaryCard = document.getElementById("summaryCard");
 const choiceSection = document.getElementById("choiceSection");
 const fpSection = document.getElementById("fpSection");
 const otpSection = document.getElementById("otpSection");
+const voiceAuthSection = document.getElementById("voiceAuthSection");
 const resultSection = document.getElementById("resultSection");
 
 let webauthnAvailableOnAccount = false;
 let platformSupported = false;
 
 function showOnly(el) {
-  [choiceSection, fpSection, otpSection, resultSection].forEach((s) => {
+  [choiceSection, fpSection, otpSection, voiceAuthSection, resultSection].forEach((s) => {
     s.style.display = s === el ? "block" : "none";
   });
 }
 
+const RESULT_ICON_SUCCESS = {{ icon('check-circle', 46)|tojson }};
+const RESULT_ICON_ERROR = {{ icon('x-circle', 46)|tojson }};
+
 function showResult(success, title, message, redirect) {
   showOnly(resultSection);
-  document.getElementById("resultIcon").textContent = success ? "✅" : "❌";
+  document.getElementById("resultIcon").innerHTML = success ? RESULT_ICON_SUCCESS : RESULT_ICON_ERROR;
+  document.getElementById("resultIcon").style.color = success ? "var(--success)" : "var(--danger)";
   document.getElementById("resultTitle").textContent = title;
   document.getElementById("resultMessage").textContent = message || "";
   const doneBtn = document.getElementById("doneBtn");
@@ -96,6 +114,19 @@ function showResult(success, title, message, redirect) {
   if (success && redirect) {
     setTimeout(() => { window.location.href = redirect; }, 1400);
   }
+}
+
+// Shared by BOTH the fingerprint and OTP success paths: if the server
+// says the primary factor succeeded but voice verification is still
+// required (account has Voice Authentication enabled), show that step
+// instead of the final result. Otherwise, behave exactly as before.
+function handlePrimaryAuthResult(data) {
+  if (data.requires_voice) {
+    showOnly(voiceAuthSection);
+    document.getElementById("voiceVerifyStatus").textContent = "اضغط لتسجيل صوتك للتأكيد النهائي";
+    return;
+  }
+  showResult(true, "تمت العملية بنجاح", data.message, data.redirect);
 }
 
 document.getElementById("cancelBtn").addEventListener("click", async () => {
@@ -169,8 +200,8 @@ document.getElementById("scanBtn").addEventListener("click", async () => {
   btn.disabled = false;
 
   if (result.success) {
-    status.textContent = "تم التحقق بنجاح ✅";
-    showResult(true, "تمت العملية بنجاح", result.message, result.redirect);
+    status.textContent = "تم التحقق بنجاح";
+    handlePrimaryAuthResult(result);
   } else {
     // Never silently fail: always show a clear error, and offer SMS as a
     // fallback right away instead of leaving the user stuck.
@@ -189,6 +220,12 @@ function startOtp() {
     document.getElementById("switchToFpBtn").style.display = "block";
   }
   sendOtp();
+  if (window.SanadAccessibility) {
+    window.SanadAccessibility.speak(
+      "تم إرسال رمز تحقق مكوّن من ستة أرقام إلى جوالك، الرجاء إدخاله للتأكيد",
+      "otp"
+    );
+  }
 }
 
 async function sendOtp() {
@@ -255,7 +292,7 @@ async function submitOtpCode(code) {
   verifying = false;
 
   if (ok && data.success) {
-    showResult(true, "تمت العملية بنجاح", data.message, data.redirect);
+    handlePrimaryAuthResult(data);
   } else {
     showToast(data.message || "رمز التحقق غير صحيح", "error");
     otpInputs.forEach((i) => (i.value = ""));
@@ -294,5 +331,55 @@ if (SpeechRecognitionImpl) {
 }
 
 decideInitialScreen();
+
+// ---------------- Voice verification (only reached after primary auth) ----------------
+const voiceVerifyWaveform = SanadWaveform.create(document.getElementById("voiceVerifyWaveform"));
+
+document.getElementById("voiceVerifyBtn").addEventListener("click", async () => {
+  const btn = document.getElementById("voiceVerifyBtn");
+  const icon = document.getElementById("voiceVerifyIcon");
+  const status = document.getElementById("voiceVerifyStatus");
+
+  if (!window.SanadVoiceAuthRecorder) {
+    showToast("المتصفح لا يدعم تسجيل الصوت", "error");
+    return;
+  }
+
+  btn.disabled = true;
+  icon.classList.add("scanning");
+  status.innerHTML = '<span class="rec-dot"></span> جارِ التسجيل... تحدث الآن';
+
+  let vizStream = null;
+  try {
+    vizStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    voiceVerifyWaveform.start(vizStream);
+  } catch (e) { /* purely cosmetic */ }
+
+  try {
+    const audio = await window.SanadVoiceAuthRecorder.recordSample(3000);
+    status.textContent = "جارِ التحقق من صوتك...";
+
+    const { data, ok } = await apiFetch("/api/action/voice/verify", { method: "POST", body: { audio } });
+
+    icon.classList.remove("scanning");
+    btn.disabled = false;
+    voiceVerifyWaveform.stop();
+    if (vizStream) vizStream.getTracks().forEach((t) => t.stop());
+
+    if (ok && data.success) {
+      status.textContent = "تم التحقق بنجاح";
+      showResult(true, "تمت العملية بنجاح", data.message, data.redirect);
+    } else {
+      status.textContent = "فشل التحقق الصوتي";
+      showToast(data.message || "فشل التحقق الصوتي، حاول مرة أخرى", "error");
+    }
+  } catch (e) {
+    icon.classList.remove("scanning");
+    btn.disabled = false;
+    voiceVerifyWaveform.stop();
+    if (vizStream) vizStream.getTracks().forEach((t) => t.stop());
+    showToast("تعذر الوصول إلى الميكروفون", "error");
+  }
+});
 </script>
 {% endblock %}

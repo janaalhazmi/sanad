@@ -1,13 +1,31 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block title %}تسجيل الدخول - سَند{% endblock %}
 {% block content %}
 <div class="login-wrap">
   <div class="login-topbar">
-    <span class="login-pill">🌐 EN</span>
+    <span class="login-pill">{{ icon('globe', 14) }} EN</span>
     <div class="login-mark">س</div>
   </div>
 
   <h1 class="login-title">أهلاً بعودتك<br><span id="welcomeName">{{ account.name if account else "بك" }}</span></h1>
+
+  {% if lockout_seconds and lockout_seconds > 0 %}
+  <div class="card" style="border-color:var(--danger); background:var(--card-bg-soft);">
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px;">
+      <span style="color:var(--danger);">{{ icon('x-circle', 26) }}</span>
+      <div style="font-weight:800; color:var(--danger); font-size:16px;">تنبيه أمني</div>
+    </div>
+    <p style="margin:0 0 18px; line-height:1.8; color:var(--text);">
+      تم اكتشاف حالة طوارئ. تم إرسال بلاغ أمني لحماية الحساب.
+      سيتم إعادة تفعيل تسجيل الدخول خلال <span id="lockoutCountdown">{{ lockout_seconds }}</span> ثانية.
+    </p>
+    <div style="text-align:center; font-size:40px; font-weight:800; color:var(--danger); margin-bottom:6px;" id="lockoutBigCounter">{{ lockout_seconds }}</div>
+    <div style="height:8px; border-radius:6px; background:var(--slate-border); overflow:hidden;">
+      <div id="lockoutProgressBar" style="height:100%; background:var(--danger); width:100%; transition:width 1s linear;"></div>
+    </div>
+  </div>
+  {% else %}
 
   <div class="pin-label">أدخل الرمز السري</div>
   <form id="loginForm">
@@ -32,9 +50,9 @@
 
     <div class="login-actions">
       <button type="submit" class="btn" id="quickLoginBtn">
-        <span id="quickLoginIcon">👆</span> <span id="quickLoginLabel">الدخول السريع</span>
+        <span id="quickLoginIcon">{{ icon('fingerprint', 18) }}</span> <span id="quickLoginLabel">الدخول السريع</span>
       </button>
-      <button type="button" class="btn nafath" id="digitalIdBtn">🪪 الدخول عبر الهوية الرقمية</button>
+      <button type="button" class="btn nafath" id="digitalIdBtn">{{ icon('id-card', 18) }} الدخول عبر الهوية الرقمية</button>
     </div>
   </form>
 
@@ -42,6 +60,7 @@
     حساب تجريبي — الرمز السري: <b dir="ltr">12345</b>
     <span id="bioHint"></span>
   </div>
+  {% endif %}
 
   <div class="login-footer">
     <span>اتصل بنا</span>
@@ -53,92 +72,121 @@
 
 {% block extra_scripts %}
 <script>
-const pinBoxes = Array.from(document.querySelectorAll("#pinInputs input"));
-pinBoxes.forEach((box, idx) => {
-  box.addEventListener("input", () => {
-    box.value = box.value.replace(/[^0-9]/g, "");
-    if (box.value && idx < pinBoxes.length - 1) pinBoxes[idx + 1].focus();
-    if (pinBoxes.every((b) => b.value)) attemptPinLogin();
-  });
-  box.addEventListener("keydown", (e) => {
-    if (e.key === "Backspace" && !box.value && idx > 0) pinBoxes[idx - 1].focus();
-  });
-});
-pinBoxes[0].focus();
+const LOCKOUT_SECONDS_REMAINING = {{ lockout_seconds|default(0) }};
 
-document.getElementById("toggleClassicLogin").addEventListener("click", (e) => {
-  e.preventDefault();
-  document.getElementById("classicFields").classList.toggle("open");
-});
-
-document.getElementById("digitalIdBtn").addEventListener("click", () => {
-  showToast("الدخول عبر الهوية الرقمية غير متاح في هذا العرض التوضيحي", "error");
-});
-
-async function doLogin(password) {
-  const phone = document.getElementById("phone").value.trim();
-  const { data } = await apiFetch("/api/login", { method: "POST", body: { phone, password } });
-  if (data.success) {
-    window.location.href = data.redirect || "/dashboard";
-  } else {
-    showToast(data.message || "الرمز السري غير صحيح", "error");
-    pinBoxes.forEach((b) => (b.value = ""));
-    pinBoxes[0].focus();
-  }
-}
-
-function attemptPinLogin() {
-  const pin = pinBoxes.map((b) => b.value).join("");
-  doLogin(pin);
-}
-
-document.getElementById("loginForm").addEventListener("submit", (e) => {
-  e.preventDefault();
-  attemptPinLogin();
-});
-
-// ---------------- Quick (biometric) login ----------------
-(async function setupQuickLogin() {
-  const btn = document.getElementById("quickLoginBtn");
-  const icon = document.getElementById("quickLoginIcon");
-  const label = document.getElementById("quickLoginLabel");
-  const hint = document.getElementById("bioHint");
-
-  const { data: status } = await apiFetch("/api/webauthn/status");
-  const platformAvailable = await checkPlatformAuthenticatorAvailable();
-
-  if (status && status.enabled && platformAvailable) {
-    icon.textContent = "🔐";
-    label.textContent = "الدخول ببصمتك أو Face ID";
-    btn.type = "button";
-    btn.addEventListener("click", async (e) => {
-      e.preventDefault();
-      btn.disabled = true;
-      const result = await loginWithBiometric();
-      btn.disabled = false;
-      if (result.success) {
-        window.location.href = result.redirect || "/dashboard";
-      } else {
-        showToast(result.message, "error");
-      }
-    });
-  } else {
-    icon.textContent = "👆";
-    label.textContent = "الدخول السريع";
-    btn.type = "button";
-    btn.addEventListener("click", (e) => {
-      e.preventDefault();
-      if (pinBoxes.every((b) => b.value)) {
-        attemptPinLogin();
-      } else {
-        showToast("أدخل الرمز السري أعلاه أولاً", "error");
-        pinBoxes.find((b) => !b.value)?.focus();
-      }
-    });
-    if (!status || !status.enabled) {
-      hint.textContent = " — يمكن تفعيل الدخول بالبصمة من الإعدادات بعد الدخول";
+if (LOCKOUT_SECONDS_REMAINING > 0) {
+  // Server-enforced lockout (see /api/login's own check — this countdown
+  // is a UX convenience, NOT the security boundary): count down visibly,
+  // then reload so the server's real remaining-time check decides whether
+  // the normal login form actually comes back.
+  let remaining = LOCKOUT_SECONDS_REMAINING;
+  const total = LOCKOUT_SECONDS_REMAINING;
+  const bigCounter = document.getElementById("lockoutBigCounter");
+  const inlineCounter = document.getElementById("lockoutCountdown");
+  const progressBar = document.getElementById("lockoutProgressBar");
+  const timer = setInterval(() => {
+    remaining -= 1;
+    if (bigCounter) bigCounter.textContent = Math.max(0, remaining);
+    if (inlineCounter) inlineCounter.textContent = Math.max(0, remaining);
+    if (progressBar) progressBar.style.width = `${Math.max(0, (remaining / total) * 100)}%`;
+    if (remaining <= 0) {
+      clearInterval(timer);
+      window.location.reload();
     }
-  }
-})();
+  }, 1000);
+} else {
+  // Normal login form — none of this exists in the DOM during a lockout.
+  const pinBoxes = Array.from(document.querySelectorAll("#pinInputs input"));
+  pinBoxes.forEach((box, idx) => {
+    box.addEventListener("input", () => {
+      box.value = box.value.replace(/[^0-9]/g, "");
+      if (box.value && idx < pinBoxes.length - 1) pinBoxes[idx + 1].focus();
+      if (pinBoxes.every((b) => b.value)) attemptPinLogin();
+    });
+    box.addEventListener("keydown", (e) => {
+      if (e.key === "Backspace" && !box.value && idx > 0) pinBoxes[idx - 1].focus();
+    });
+  });
+  if (pinBoxes[0]) pinBoxes[0].focus();
+
+  document.getElementById("toggleClassicLogin").addEventListener("click", (e) => {
+    e.preventDefault();
+    document.getElementById("classicFields").classList.toggle("open");
+  });
+
+  document.getElementById("digitalIdBtn").addEventListener("click", () => {
+    showToast("الدخول عبر الهوية الرقمية غير متاح في هذا العرض التوضيحي", "error");
+  });
+
+  var doLogin = async function (password) {
+    const phone = document.getElementById("phone").value.trim();
+    const { data } = await apiFetch("/api/login", { method: "POST", body: { phone, password } });
+    if (data.success) {
+      window.location.href = data.redirect || "/dashboard";
+    } else if (data.locked) {
+      window.location.reload(); // server says we're locked — show the lockout screen
+    } else {
+      showToast(data.message || "الرمز السري غير صحيح", "error");
+      pinBoxes.forEach((b) => (b.value = ""));
+      if (pinBoxes[0]) pinBoxes[0].focus();
+    }
+  };
+
+  var attemptPinLogin = function () {
+    const pin = pinBoxes.map((b) => b.value).join("");
+    doLogin(pin);
+  };
+
+  document.getElementById("loginForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    attemptPinLogin();
+  });
+
+  // ---------------- Quick (biometric) login ----------------
+  (async function setupQuickLogin() {
+    const btn = document.getElementById("quickLoginBtn");
+    const icon = document.getElementById("quickLoginIcon");
+    const label = document.getElementById("quickLoginLabel");
+    const hint = document.getElementById("bioHint");
+
+    const { data: status } = await apiFetch("/api/webauthn/status");
+    const platformAvailable = await checkPlatformAuthenticatorAvailable();
+
+    if (status && status.enabled && platformAvailable) {
+      icon.innerHTML = {{ icon('fingerprint', 18)|tojson }};
+      label.textContent = "الدخول ببصمتك أو Face ID";
+      btn.type = "button";
+      btn.addEventListener("click", async (e) => {
+        e.preventDefault();
+        btn.disabled = true;
+        const result = await loginWithBiometric();
+        btn.disabled = false;
+        if (result.success) {
+          window.location.href = result.redirect || "/dashboard";
+        } else if (result.locked) {
+          window.location.reload();
+        } else {
+          showToast(result.message, "error");
+        }
+      });
+    } else {
+      icon.innerHTML = {{ icon('fingerprint', 18)|tojson }};
+      label.textContent = "الدخول السريع";
+      btn.type = "button";
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        if (pinBoxes.every((b) => b.value)) {
+          attemptPinLogin();
+        } else {
+          showToast("أدخل الرمز السري أعلاه أولاً", "error");
+          pinBoxes.find((b) => !b.value)?.focus();
+        }
+      });
+      if (!status || !status.enabled) {
+        hint.textContent = " — يمكن تفعيل الدخول بالبصمة من الإعدادات بعد الدخول";
+      }
+    }
+  })();
+}
 </script>
 {% endblock %}
