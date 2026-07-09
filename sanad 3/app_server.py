@@ -2099,7 +2099,5 @@ def api_ai_diagnose():
 
 
 if __name__ == "__main__":
-    debug_mode = os.environ.get("SANAD_DEBUG", "false").strip().lower() in ("1", "true", "yes")
-    if debug_mode:
-        print("WARNING: SANAD_DEBUG is enabled — the interactive debugger is active. Never use this in production.", file=sys.stderr)
-    app.run(host="0.0.0.0", port=5001, debug=debug_mode)
+    port = int(os.environ.get("PORT", 5001))
+    app.run(host="0.0.0.0", port=port)
