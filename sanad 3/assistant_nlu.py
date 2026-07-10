@@ -22,12 +22,26 @@ _ar_model = None
 
 
 def _get_model():
-    """Lazily load (and cache) the trained intent classifier."""
-    global _ar_model
-    if _ar_model is None:
-        _ar_model = joblib.load(MODEL_FILE)
-    return _ar_model
 
+    """Lazily load (and cache) the trained intent classifier."""
+
+    global _ar_model
+
+    if _ar_model is not None:
+
+        return _ar_model
+
+    try:
+
+        _ar_model = joblib.load(MODEL_FILE)
+
+    except Exception as e:
+
+        print(f"[assistant_nlu] WARNING: failed to load {MODEL_FILE}: {e}")
+
+        _ar_model = False
+
+    return _ar_model
 
 def warm_up():
     """Load the model in a background thread so the first real request
